@@ -1,0 +1,64 @@
+# ==========================
+# AGIcyborg Secure .gitignore
+# ==========================
+
+# 🔐 Environment and Secrets
+.env
+.env.*
+tools/keys/*
+tools/license.jwt
+tools/runtime.bin.enc
+tools/*.pem
+*.key
+*.crt
+
+# 🧠 Python Artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pdb
+*.egg-info/
+*.log
+
+# 🧩 Virtual Environment
+.venv/
+venv/
+ENV/
+env/
+
+# 🧪 Test Artifacts
+.coverage
+htmlcov/
+.cache/
+pytest_cache/
+*.pytest_cache/
+
+# 💾 Build Outputs
+build/
+dist/
+*.egg
+*.whl
+
+# 🖼️ OS / IDE Noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# 🚫 Temporary Files
+*.bak
+*.tmp
+*.old
+
+# 🌐 Node / Frontend (if added later)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ⚙️ Supabase / Credentials
+supabase/config.toml
+supabase/.env
+supabase/.supabase

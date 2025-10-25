@@ -1,0 +1,150 @@
+{
+  "version": 1,
+  "generated_at": "2025-10-22T03:05:36.236485Z",
+  "items": [
+    {
+      "id": "5eed5b98-678d-43ce-95a6-42e81d7b8546",
+      "source_id": "P001",
+      "theme": "Clarity",
+      "frequency_weight": 5,
+      "tone_template": "Awakened Guide",
+      "active": true
+    },
+    {
+      "id": "79e6776f-acbd-4ff6-bfef-b03e35bf10a7",
+      "source_id": "P002",
+      "theme": "Clarity",
+      "frequency_weight": 5,
+      "tone_template": "Awakened Guide",
+      "active": true
+    },
+    {
+      "id": "00589f16-d7c4-4c6f-80c2-80659257e35c",
+      "source_id": "P003",
+      "theme": "Clarity",
+      "frequency_weight": 5,
+      "tone_template": "Awakened Guide",
+      "active": true
+    },
+    {
+      "id": "a9be1091-b121-400b-ad49-9146a2d785c1",
+      "source_id": "P004",
+      "theme": "Compassion",
+      "frequency_weight": 5,
+      "tone_template": "Compassionate Mirror",
+      "active": true
+    },
+    {
+      "id": "e4a9d87d-73bd-4243-a979-7cd0f155fd4c",
+      "source_id": "P005",
+      "theme": "Compassion",
+      "frequency_weight": 5,
+      "tone_template": "Compassionate Mirror",
+      "active": true
+    },
+    {
+      "id": "0268fa66-fa98-41a1-8d91-9e5ab29497cc",
+      "source_id": "P006",
+      "theme": "Compassion",
+      "frequency_weight": 5,
+      "tone_template": "Compassionate Mirror",
+      "active": true
+    },
+    {
+      "id": "c07e3ac1-4f3f-4f37-89cb-cf0c4b21ffb9",
+      "source_id": "P007",
+      "theme": "Courage",
+      "frequency_weight": 5,
+      "tone_template": "Calm Sage",
+      "active": true
+    },
+    {
+      "id": "5502aa1e-0372-47a1-b6c5-7d44417a32b5",
+      "source_id": "P008",
+      "theme": "Courage",
+      "frequency_weight": 5,
+      "tone_template": "Calm Sage",
+      "active": true
+    },
+    {
+      "id": "d68369ca-f39c-4c04-acd7-d4f735fc57c5",
+      "source_id": "P009",
+      "theme": "Courage",
+      "frequency_weight": 5,
+      "tone_template": "Calm Sage",
+      "active": true
+    },
+    {
+      "id": "c24572d4-8461-4690-8472-f9a477c6eea9",
+      "source_id": "P010",
+      "theme": "Presence",
+      "frequency_weight": 5,
+      "tone_template": "Calm Sage",
+      "active": true
+    },
+    {
+      "id": "48715c5e-313e-4fa7-a348-e87b4f196299",
+      "source_id": "P011",
+      "theme": "Presence",
+      "frequency_weight": 5,
+      "tone_template": "Calm Sage",
+      "active": true
+    },
+    {
+      "id": "1acdb768-32d7-45aa-9ed0-fccaabacfe36",
+      "source_id": "P012",
+      "theme": "Presence",
+      "frequency_weight": 5,
+      "tone_template": "Calm Sage",
+      "active": true
+    },
+    {
+      "id": "7b612309-bb9a-4617-b9fe-f515b7b0967f",
+      "source_id": "P013",
+      "theme": "Surrender",
+      "frequency_weight": 5,
+      "tone_template": "Compassionate Mirror",
+      "active": true
+    },
+    {
+      "id": "4b1d105c-999a-4091-ad66-07ec58f73793",
+      "source_id": "P014",
+      "theme": "Surrender",
+      "frequency_weight": 5,
+      "tone_template": "Compassionate Mirror",
+      "active": true
+    },
+    {
+      "id": "50aed7a1-caa6-4641-88c8-9c71f567ce47",
+      "source_id": "P015",
+      "theme": "Surrender",
+      "frequency_weight": 5,
+      "tone_template": "Compassionate Mirror",
+      "active": true
+    },
+    {
+      "id": "0f91b4b0-b9db-4d04-85f2-eed164c73e95",
+      "source_id": "P016",
+      "theme": "Purpose",
+      "frequency_weight": 5,
+      "tone_template": "Awakened Guide",
+      "active": true
+    },
+    {
+      "id": "f18a3625-5c09-4273-b3f9-5ab5838440be",
+      "source_id": "P017",
+      "theme": "Purpose",
+      "frequency_weight": 5,
+      "tone_template": "Awakened Guide",
+      "active": true
+    },
+    {
+      "id": "44fc493f-7fc3-4988-bf22-a6738fae8b7c",
+      "source_id": "P018",
+      "theme": "Purpose",
+      "frequency_weight": 5,
+      "tone_template": "Awakened Guide",
+      "active": true
+    }
+  ]
+}

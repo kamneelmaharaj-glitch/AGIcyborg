@@ -1,0 +1,18 @@
+# ===============================
+# AGIcyborg .gitattributes
+# ===============================
+
+# Ensure all text files normalize line endings (for cross-platform consistency)
+* text=auto eol=lf
+
+# Mark binary and encrypted assets to prevent diffs
+*.bin.enc binary
+*.jwt binary
+*.key binary
+*.pem binary
+*.crt binary
+
+# Keep Python scripts and Markdown as UTF-8 text
+*.py text diff=python
+*.md text diff=markdown
+*.sh text eol=lf

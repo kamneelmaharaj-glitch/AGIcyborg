@@ -1,26 +1,58 @@
 # 🏗️ Architecture — AGIcyborg
 
-## High-Level
-- **Streamlit UI**: minimal local interface for reflection and testing.
-- **Supabase**: managed Postgres for prompts, insights, and reflection logs.
-- **Encrypted Runtime** (`tools/runtime.bin.enc`): core guidance logic, decrypted in-memory only.
-- **In-Memory Loader** (`tools/inmem_loader.py`): verifies license, decrypts runtime, dyn-imports.
-- **OpenAI (optional)**: AI Mentor layer to personalize insights.
-- **Health Page** (`0_Health_Check.py`): status, counts, simple charts, cache refresh.
+## System Overview
+_The high-level flow of the AGIcyborg runtime environment._
 
+```mermaid
+graph TD
+  U[User 🧘‍♂️] -->|Reflects| S[Streamlit UI 🌿]
+  S -->|Fetch / Save| DB[(Supabase Postgres)]
+  S -->|Optional Guidance| OA[OpenAI Mentor 🧠]
+  S -->|Load + Decrypt (in-memory)| RT[Encrypted Runtime 🔐]
+
+  RT --> LIC[License Validation ✅]
+  LIC -->|Ed25519 verify| PK[AGI_PUBKEY_B64]
+  RT --> KEY[AGI_KEY_B64]:::secret
+  RT --> ENC[runtime.bin.enc]:::binary
+
+  DB --> PR[(reflection_prompts)]
+  DB --> MI[(mentor_insights)]
+  DB --> UR[(user_reflections)]
+
+  classDef secret fill:#fde68a,stroke:#c2410c,color:#7c2d12
+  classDef binary fill:#e5e7eb,stroke:#374151,color:#111827
 ```
-[User] ⇄ Streamlit ── Supabase
-                 └─(optional)→ OpenAI
-                 └─ inmem_loader → runtime.bin.enc (license+decrypt in-memory)
+
+## Data Model
+_Entities and relationships used by the reflection engine._
+
+```mermaid
+erDiagram
+  reflection_prompts {
+    uuid id
+    string theme
+    string prompt
+    numeric frequency_weight
+    bool active
+  }
+
+  mentor_insights {
+    uuid id
+    string theme
+    string insight
+    string mantra
+  }
+
+  user_reflections {
+    uuid id
+    uuid prompt_id
+    string theme
+    text reflection_text
+    text generated_insight
+    text generated_mantra
+    timestamp created_at
+  }
+
+  reflection_prompts ||--o{ user_reflections : "via prompt_id"
+  mentor_insights   ||--o{ user_reflections : "inspired insight"
 ```
-
-## Data
-- `reflection_prompts(id, theme, prompt, frequency_weight, active)`
-- `mentor_insights(id, theme, insight, mantra)`
-- `user_reflections(prompt_id, theme, reflection_text, generated_insight, generated_mantra, created_at)`
-
-## Security Design
-- No plaintext keys or runtime on disk.
-- Ed25519-signed license; Fernet decrypt with `AGI_KEY_B64` (from `.env`).
-- `.gitignore` excludes `.env`, keys, license, venv, runtime binary.
-- Validator `tools/validate_env.py` runs pre-commit and in test harness.

@@ -1,5 +1,19 @@
 # 🧑‍💻 Development Guide — AGIcyborg
 
+## Developer Workflow
+_Standard flow for local setup and iteration._
+
+```mermaid
+flowchart LR
+  A[Clone repo] --> B[Create .venv]
+  B --> C[Install deps (pip)]
+  C --> D[Copy .env.template → .env]
+  D --> E[Validate env (tools/validate_env.py)]
+  E --> F[Runtime smoke test (tools/test_runtime_call.py)]
+  F --> G[Run app: streamlit run main.py]
+  G --> H[Commit + push (pre-commit validates .env)]
+```
+
 ## Prereqs
 - Python 3.11 (recommended)
 - macOS: `xcode-select --install` (for build tools)

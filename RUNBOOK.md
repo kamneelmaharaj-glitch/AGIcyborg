@@ -1,5 +1,20 @@
 # 🛠️ Runbook — AGIcyborg
 
+## CI/CD & Deployment (Preview)
+```mermaid
+flowchart TD
+  Dev[Developer] --> Repo[GitHub Private Repo]
+  Repo -->|push| CI[GitHub Actions]
+  CI -->|build & test| Image[Container Image]
+  Image -->|store| Registry[(Private Registry)]
+  CI -->|deploy| Node[AGIcyborg Cloud Node]
+  Node --> Users[Web/Mobile Clients]
+  Node --> DB[(Supabase Postgres)]
+  Node --> KM[Key Vault / Secrets]
+
+  click Repo "https://github.com/" _blank
+```
+
 ## Daily
 - `python -m tools.validate_env`
 - `python -m tools.test_runtime_call`

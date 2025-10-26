@@ -1,5 +1,27 @@
 # 🔐 Security — AGIcyborg
 
+## Security Lifecycle
+_Startup validation and in-memory runtime loading._
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant U as User
+  participant APP as App (Streamlit)
+  participant LIC as AGI_LIC_B64 (License)
+  participant PUB as AGI_PUBKEY_B64
+  participant KEY as AGI_KEY_B64
+  participant ENC as runtime.bin.enc
+
+  U->>APP: Start app
+  APP->>LIC: Load license token
+  APP->>PUB: Verify Ed25519 signature + exp
+  APP->>KEY: Load Fernet key from .env
+  APP->>ENC: Read encrypted runtime (no plaintext on disk)
+  APP->>APP: Decrypt in memory → compile module
+  APP-->>U: Secure runtime ready ✅
+```
+
 ## Principles
 - Least-privilege by default.
 - Secrets local; no secrets in Git.

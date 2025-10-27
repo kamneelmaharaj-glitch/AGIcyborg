@@ -4,9 +4,6 @@
 > All diagrams use GitHub-compatible Mermaid.
 
 ---
-
-## 1) System Overview
-
 ```mermaid
 flowchart TD
   %% ---------------------------
@@ -16,7 +13,7 @@ flowchart TD
   %% Nodes
   U[User / Browser]
   S[Streamlit UI]
-  DB[(Supabase<br/>Postgres)]
+  DB[(Supabase Postgres)]
   OA[OpenAI Mentor]
   RT[Encrypted Runtime]
   LIC[[License JWT]]
@@ -29,11 +26,11 @@ flowchart TD
 
   %% 1) App flows
   U --> S
-  S -->|Fetch / Save| DB
+  S -->|Fetch Save| DB
   S -->|Optional guidance| OA
-  S -->|Load & decrypt (in-memory)| RT
+  S -->|Load decrypt in memory| RT
 
-  %% 2) Runtime load & verification
+  %% 2) Runtime load and verification
   RT -->|validate| LIC
   LIC -->|ed25519 verify with| PK
   RT -->|decrypt using| KEY
@@ -44,16 +41,7 @@ flowchart TD
   DB --- MI
   DB --- UR
 
-  %% Optional styling (GitHub-safe)
-  classDef db fill:#eef5ff,stroke:#6b93d6,color:#102a43,stroke-width:1px;
-  classDef rt fill:#fff5e6,stroke:#d17a00,color:#3b2f00,stroke-width:1px;
-  classDef sec fill:#fde8ea,stroke:#c2414b,color:#6a041d,stroke-width:1px;
-
-  class DB,PR,MI,UR db;
-  class RT rt;
-  class LIC,PK,KEY,BIN sec;
-
-  flowchart LR
+  ```mermaid
   %% ---------------------------
   %%  Trust Boundary Diagram
   %% ---------------------------
@@ -95,6 +83,7 @@ flowchart TD
   class BROWSER,HOST,SECRETS,CLOUD,OPENAI boundary;
 
   flowchart TD
+  ```mermaid
   %% ---------------------------
   %%  Deployment Topology Diagram
   %% ---------------------------
@@ -114,6 +103,7 @@ flowchart TD
   class OA ext;
 
   erDiagram
+  ```mermaid
   %% ---------------------------
   %%  Data Model ER Diagram
   %% ---------------------------
@@ -159,7 +149,7 @@ flowchart TD
 
   U->>S: Request action that needs runtime
   S->>L: load_runtime()
-
+```mermaid
   %% --- License verification ---
   L->>ENV: Read LIC & PK
   L->>L: Decode LIC (header.payload.sig)

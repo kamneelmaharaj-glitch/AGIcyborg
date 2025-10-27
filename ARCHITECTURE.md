@@ -9,60 +9,49 @@
 
 ```mermaid
 flowchart TD
-  U[User / Browser] --> S[Streamlit UI]
-  S --> DB[(Supabase Postgres)]
-  S --> OA[OpenAI API]
-  S --> RT[Encrypted Runtime]
-  S --> LIC[License Token]
-  S --> KEY[Runtime Key - Fernet]
+  %% ---------------------------
+  %%  System Overview Diagram
+  %% ---------------------------
 
-  %% runtime load path
-  RT -. binary .-> BIN[runtime.bin.enc]
+  %% Nodes
+  U[User / Browser]
+  S[Streamlit UI]
+  DB[(Supabase<br/>Postgres)]
+  OA[OpenAI Mentor]
+  RT[Encrypted Runtime]
+  LIC[[License JWT]]
+  PK[[AGI_PUBKEY_B64]]
+  KEY[[AGI_KEY_B64]]
+  BIN[(runtime.bin.enc)]
+  PR[(reflection_prompts)]
+  MI[(mentor_insights)]
+  UR[(user_reflections)]
 
-  %% license verification
-  LIC -->|ed25519 verify with pubkey| PK[AGI_PUBKEY_B64]
+  %% 1) App flows
+  U --> S
+  S -->|Fetch / Save| DB
+  S -->|Optional guidance| OA
+  S -->|Load & decrypt (in-memory)| RT
 
-  %% decrypt
-  KEY -->|decrypt| RT
+  %% 2) Runtime load & verification
+  RT -->|validate| LIC
+  LIC -->|ed25519 verify with| PK
+  RT -->|decrypt using| KEY
+  RT -->|reads| BIN
 
-  %% data tables
-  DB --- RP[(reflection_prompts)]
-  DB --- MI[(mentor_insights)]
-  DB --- UR[(user_reflections)]
+  %% 3) Data groupings (tables inside DB)
+  DB --- PR
+  DB --- MI
+  DB --- UR
 
-  classDef store fill:#eef5ff,stroke:#6aa5ff,color:#1a3c6e;
-  classDef crypto fill:#fff4e6,stroke:#ffa458,color:#7a3b00;
-  classDef runtime fill:#f2f7f2,stroke:#79b57b,color:#0f3d13;
+  %% Optional styling (GitHub-safe)
+  classDef db fill:#eef5ff,stroke:#6b93d6,color:#102a43,stroke-width:1px;
+  classDef rt fill:#fff5e6,stroke:#d17a00,color:#3b2f00,stroke-width:1px;
+  classDef sec fill:#fde8ea,stroke:#c2414b,color:#6a041d,stroke-width:1px;
 
-  class DB,RP,MI,UR store
-  class LIC,KEY,PK crypto
-  class RT,BIN runtime
-
-%% 2) Runtime Load & Verify (Sequence)
-
-  sequenceDiagram
-  autonumber
-  participant UI as Streamlit App
-  participant L  as Loader
-  participant V  as Verifier
-  participant C  as Crypto
-  participant R  as Runtime (in-memory)
-
-  UI->>L: request runtime
-  L->>V: validate license (AGI_LIC_B64)
-  V->>V: ed25519 verify with AGI_PUBKEY_B64
-  V-->>L: ok / fail
-
-  alt license ok
-    L->>C: read runtime.bin.enc
-    L->>C: get Fernet key (AGI_KEY_B64)
-    C->>C: decrypt bytes
-    C-->>L: plaintext module bytes
-    L->>R: compile & exec in-memory
-    R-->>UI: module loaded
-  else invalid license
-    L-->>UI: error (invalid license)
-  end
+  class DB,PR,MI,UR db;
+  class RT rt;
+  class LIC,PK,KEY, BIN sec;
 
 %% 3) Trust Boundaries
 

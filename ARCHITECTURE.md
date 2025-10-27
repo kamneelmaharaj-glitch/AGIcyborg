@@ -5,7 +5,7 @@
 
 ---
 
-## 1) System Overview
+%% 1) System Overview
 
 ```mermaid
 flowchart TD
@@ -38,7 +38,7 @@ flowchart TD
   class LIC,KEY,PK crypto
   class RT,BIN runtime
 
-## 2) Runtime Load & Verify (Sequence)
+%% 2) Runtime Load & Verify (Sequence)
 
   sequenceDiagram
   autonumber
@@ -64,7 +64,7 @@ flowchart TD
     L-->>UI: error (invalid license)
   end
 
-## 3) Trust Boundaries
+%% 3) Trust Boundaries
 
   flowchart LR
   subgraph BROWSER[Browser / User Device]
@@ -101,7 +101,7 @@ flowchart TD
   classDef boundary stroke-dasharray: 4 4;
   class BROWSER,HOST,SECRETS,CLOUD,OPENAI boundary
 
-## 4) Deployment Topology
+%% 4) Deployment Topology
 
   flowchart TD
   DEV[Dev Laptop] --> GH[GitHub Repo]
@@ -131,7 +131,7 @@ flowchart TD
   class HOST,DB infra
   class OA ext
 
-## 5) Data Model ERD
+%% 5) Data Model ERD
 
   erDiagram
   reflection_prompts {

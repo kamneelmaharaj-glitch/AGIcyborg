@@ -5,6 +5,7 @@
 # 🔐 Environment and Secrets
 .env
 .env.*
+!.env.template          # ✅ Allow template to stay in Git
 tools/keys/*
 tools/license.jwt
 tools/runtime.bin.enc
@@ -62,3 +63,9 @@ yarn-error.log*
 supabase/config.toml
 supabase/.env
 supabase/.supabase
+
+# Streamlit secrets
+.streamlit/secrets.toml
+# secrets
+.env
+.streamlit/secrets.toml

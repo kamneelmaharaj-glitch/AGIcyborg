@@ -24,6 +24,16 @@ st.set_page_config(page_title="AGIcyborg — Reflection", page_icon="🌿", layo
 ENV_PATH = Path(__file__).with_name(".env")
 load_dotenv(dotenv_path=ENV_PATH)
 
+import sys
+from dotenv import load_dotenv
+
+load_dotenv()
+
+if os.getenv("SUPABASE_ANON_KEY"):
+    sys.exit("❌ Anon key detected in .env — remove it for security compliance.")
+if not os.getenv("SUPABASE_SERVICE_ROLE_KEY"):
+    sys.exit("❌ Missing SUPABASE_SERVICE_ROLE_KEY — required for server-only access.")
+
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip()
 SUPABASE_KEY = os.getenv("SUPABASE_KEY", "").strip()
 

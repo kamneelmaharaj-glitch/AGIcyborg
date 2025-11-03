@@ -2,3 +2,6 @@ streamlit
 pandas
 supabase
 python-dotenv
+supabase==2.7.3
+realtime>=2.0.0
+websockets>=12.0

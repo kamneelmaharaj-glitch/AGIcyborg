@@ -4,8 +4,19 @@ from __future__ import annotations
 import streamlit as st
 import textwrap, random, datetime
 
+# ----------------------------
+# Page / config (must be first)
+# ----------------------------
 from agi.config import init_page, mask
+init_page()
+
+# ----------------------------
+# Core deps
+# ----------------------------
 from agi.db import get_client, fetch_prompts, insert_reflection_with_fallbacks
+from agi.auth import auth_gate, S_USER_ID
+from agi.metrics import render_user_metrics
+
 from agi.ai import ai_generate
 from agi.presence import render_presence_section
 from agi.questions import get_guided_questions, shuffle_guided_questions
@@ -15,23 +26,81 @@ from agi.export import build_reflection_markdown
 from agi.charts import render_energy_section
 from agi.history import render_recent_reflections
 from agi.ui import inject_global_css
+from agi.mirror import render_mirror_panel
+from agi.journal_ai import build_journal_insight, render_journal_insight
+from agi.followup import render_mentor_followup, render_microstep_widget, render_today_panel
 
 # ----------------------------
 # Boot
 # ----------------------------
-init_page()
 inject_global_css()
 
+# Supabase client + auth gate
+sb = get_client()
+# Expose sb for modules (e.g., followup.py uses session "sb")
+st.session_state["sb"] = sb
+
+user_id = auth_gate(sb)
+if not user_id:
+    st.stop()
+
+# ----------------------------
+# Load prompts ONCE
+# ----------------------------
+prompts = fetch_prompts(sb)
+if not prompts:
+    st.warning("⚠️ No prompts found in Supabase. Please seed the `reflection_prompts` table.")
+    st.stop()
+
+# ----------------------------
+# Header
+# ----------------------------
 st.title("🪷 AGIcyborg Reflection Space")
 st.caption("Awakened Guided Intelligence — Your Dharma, Amplified.")
 
-# Supabase
-sb = get_client()
+# ----------------------------
+# Filters (define BEFORE using them anywhere)
+# ----------------------------
+RANGE_CHOICES = {"7 days": 7, "14 days": 14, "30 days": 30, "90 days": 90}
+c1, c2 = st.columns([1, 1])
 
+with c1:
+    range_label = st.selectbox(
+        "Range",
+        list(RANGE_CHOICES.keys()),
+        index=2,                # default: 30 days
+        key="flt_range_choice"
+    )
+    flt_days = RANGE_CHOICES[range_label]
+
+with c2:
+    theme_list = ["All"] + sorted({p.get("theme", "") for p in prompts if p.get("theme")})
+    theme_choice = st.selectbox(
+        "Theme",
+        theme_list,
+        index=0,
+        key="flt_theme_choice"
+    )
+    flt_theme = None if theme_choice == "All" else theme_choice
+
+# Persist derived values (optional but handy)
+st.session_state["flt_days_value"] = flt_days
+st.session_state["flt_theme_value"] = flt_theme
+
+st.markdown("---")
+
+# ----------------------------
 # Sidebar diagnostics
+# ----------------------------
 with st.sidebar:
     st.markdown("### 🔎 Config")
-    from agi.config import SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_KEY, OPENAI_API_KEY, OPENAI_PROJECT
+    from agi.config import (
+        SUPABASE_URL,
+        SUPABASE_ANON_KEY,
+        SUPABASE_SERVICE_KEY,
+        OPENAI_API_KEY,
+        OPENAI_PROJECT,
+    )
     st.write("URL:", mask(SUPABASE_URL))
     st.write("Anon key:", mask(SUPABASE_ANON_KEY))
     st.write("Service key:", mask(SUPABASE_SERVICE_KEY))
@@ -44,16 +113,23 @@ with st.sidebar:
         st.error(f"Prompts check failed: {e}")
     st.divider()
 
-# Load prompts
-prompts = fetch_prompts(sb)
-if not prompts:
-    st.info("No prompts yet. Seed `reflection_prompts` to begin.")
-    st.stop()
+# ----------------------------
+# Personalized metrics (now that filters exist)
+# ----------------------------
+render_user_metrics(sb, user_id, days=flt_days, theme=flt_theme)
 
-labels = [
-    f"{p['theme']} — {p['prompt'][:72]}{'…' if len(p['prompt']) > 72 else ''}"
-    for p in prompts
-]
+# ----------------------------
+# Prompt selection (with 7-day follow-up badges)
+# ----------------------------
+
+# --- Prompt label helper (no external theme-count helper needed) ---
+def _prompt_label(i: int) -> str:
+    p = prompts[i]
+    theme = p["theme"]
+    snippet = p["prompt"][:72] + ("…" if len(p["prompt"]) > 72 else "")
+    # We can add badges later using analytics, but keep it clean for now.
+    return f"{theme} — {snippet}"
+
 idx = st.session_state.get("prompt_idx", 0)
 idx = min(idx, len(prompts) - 1)
 
@@ -61,20 +137,25 @@ sel_idx = st.selectbox(
     "Choose a reflection prompt",
     options=list(range(len(prompts))),
     index=idx,
-    format_func=lambda i: labels[i],
+    format_func=_prompt_label,
     key="prompt_selectbox",
 )
 st.session_state["prompt_idx"] = sel_idx
 
+# 🔹 make sure these come *before* we call render_presence_section
 selected = prompts[sel_idx]
 selected_prompt_id = str(selected["id"])
 selected_theme = selected["theme"]
 st.session_state["current_theme"] = selected_theme
 
-# Presence (now defined before call, lives in module)
-render_presence_section(selected_theme, sb)
+# ----------------------------
+# Today’s micro-step card
+# ----------------------------
+render_today_panel(sb, user_id)
 
+# ----------------------------
 # Guided Questions
+# ----------------------------
 qs = get_guided_questions(selected_theme, selected_prompt_id, k=3)
 used_qs = st.session_state.get(f"used_q::{selected_prompt_id}", set())
 if qs:
@@ -86,7 +167,9 @@ if qs:
         with cols[i % len(cols)]:
             if st.button(label, key=f"gqbtn::{selected_prompt_id}::{i}"):
                 prev = st.session_state.get("reflection_text", "")
-                st.session_state["reflection_text"] = (prev + ("\n\n" if prev else "") + q + "\n").strip()
+                st.session_state["reflection_text"] = (
+                    prev + ("\n\n" if prev else "") + q + "\n"
+                ).strip()
                 st.rerun()
     if st.button("🔀 Shuffle Questions", key=f"shuffle::{selected_prompt_id}"):
         shuffle_guided_questions(selected_prompt_id)
@@ -103,13 +186,15 @@ with st.form("reflect_form", clear_on_submit=False):
             mood = st.selectbox(
                 "Mood (optional)",
                 ["", "Calm", "Focused", "Grateful", "Tender", "Brave", "Curious", "Tired", "Overwhelmed"],
-                index=0, key="mood_select",
+                index=0,
+                key="mood_select",
             )
         with c2:
             tags_raw = st.text_input(
                 "Tags (comma-separated, optional)",
                 value=st.session_state.get("tags_input", ""),
-                placeholder="e.g. work, family, gratitude", key="tags_input",
+                placeholder="e.g. work, family, gratitude",
+                key="tags_input",
             )
         stillness_note = st.text_input(
             "Stillness note (optional)",
@@ -119,14 +204,18 @@ with st.form("reflect_form", clear_on_submit=False):
         )
 
     reflection_text = st.text_area(
-        "Your Reflection",
-        value=st.session_state.get("reflection_text", ""),
-        height=180,
-        placeholder="Write honestly. Small and true is enough.",
-        key="reflection_text",
-    )
+    "Your Reflection",
+    value=st.session_state.get("reflection_text", ""),
+    height=180,
+    placeholder="Write honestly. Small and true is enough.",
+    key="reflection_text",
+)
 
-    use_ai = st.checkbox("Generate Mentor Insight + Mantra (OpenAI)", value=True, key="use_ai")
+    use_ai = st.checkbox(
+        "Generate Mentor Insight + Mantra (OpenAI)",
+        value=True,
+        key="use_ai",
+    )
     submitted = st.form_submit_button("Submit", type="primary")
 
 # Track used guided questions
@@ -140,13 +229,17 @@ st.session_state["tags_raw"] = st.session_state.get("tags_input", "")
 st.session_state["mood"] = st.session_state.get("mood_select") or ""
 st.session_state["stillness_note"] = st.session_state.get("stillness_note_input", "")
 
+# ----------------------------
 # Submit handler
+# ----------------------------
 if submitted:
     if not reflection_text.strip():
         st.warning("Please enter a reflection before submitting.")
     else:
         generated_insight, generated_mantra = None, None
         theme_used = st.session_state.get("current_theme", selected_theme)
+
+        # 1) Optional AI mentor content
         if use_ai:
             try:
                 with st.spinner("Invoking Mentor…"):
@@ -154,15 +247,17 @@ if submitted:
             except Exception as e:
                 st.warning(f"AI generation skipped: {e}")
 
+        # 2) Assemble payloads
         base_row = {
-            "prompt_id": selected_prompt_id,
-            "theme": theme_used,
-            "reflection_text": reflection_text.strip(),
+            "prompt_id":         selected_prompt_id,
+            "theme":             theme_used,
+            "reflection_text":   reflection_text.strip(),
             "generated_insight": generated_insight,
-            "generated_mantra": generated_mantra,
+            "generated_mantra":  generated_mantra,
         }
-        raw_csv   = (st.session_state.get("tags_raw") or "").strip()
-        tags_list = [t.strip() for t in raw_csv.split(",") if t.strip()]
+
+        raw_csv       = (st.session_state.get("tags_raw") or "").strip()
+        tags_list     = [t.strip() for t in raw_csv.split(",") if t.strip()]
         mood_val      = st.session_state.get("mood") or None
         stillness_val = (st.session_state.get("stillness_note") or "").strip() or None
 
@@ -174,6 +269,7 @@ if submitted:
             "source":         "app",
         }
 
+        # 3) Energy / presence scores
         try:
             energy_score   = compute_energy_score(mood_val, reflection_text)
             presence_score = compute_presence_score(stillness_val)
@@ -185,48 +281,127 @@ if submitted:
             "presence_score": presence_score,
         }
 
-        ins = insert_reflection_with_fallbacks(sb, base_row, optional_fields, energy_fields)
+        # 4) Save reflection
+        ins = insert_reflection_with_fallbacks(
+            sb,
+            base_row,
+            optional_fields,
+            energy_fields,
+            user_id=st.session_state.get(S_USER_ID),
+        )
+
+        # 5) Update vector series used by Mirror Mode (best-effort)
         try:
-            if getattr(ins, "data", None):
+            from agi.db import upsert_reflection_vector
+            upsert_reflection_vector(
+                sb,
+                user_id=st.session_state.get(S_USER_ID),
+                theme=theme_used,
+                energy=energy_score,
+                presence=presence_score,
+            )
+        except Exception:
+            pass
+
+        # 6) Persist “last” state for post-submit UI
+        try:
+            if getattr(ins, "data", None) and len(ins.data):
                 st.session_state["last_row_id"] = ins.data[0].get("id")
         except Exception:
             pass
 
         st.session_state["last_reflection"] = reflection_text.strip()
-        st.session_state["last_theme"] = theme_used
-        st.session_state["last_mentor"] = {"theme": theme_used, "insight": generated_insight or "", "mantra": generated_mantra or ""}
-        st.session_state["clear_reflection"] = True
+        st.session_state["last_theme"]      = theme_used
+        st.session_state["last_mentor"]     = {
+            "theme":   theme_used,
+            "insight": generated_insight or "",
+            "mantra":  generated_mantra or "",
+        }
+
+        # 7) Local Reflective Mind card (stored for stable render after rerun)
+        ji = build_journal_insight(
+            reflection_text,
+            energy_score=energy_score,
+            presence_score=presence_score,
+        )
+        st.session_state["last_journal_ai"] = ji
+
+        # 8) Trigger Mirror pulse and refresh layout
+        st.session_state["just_saved"] = True
         st.success("Reflection saved. Thank you.")
         st.rerun()
 
+# ----------------------------
 # Persisted mentor card + download
+# ----------------------------
 _last = st.session_state.get("last_mentor")
 if _last and (_last.get("insight") or _last.get("mantra")):
-    render_mentor_card(_last.get("theme","Clarity"), _last.get("insight",""), _last.get("mantra",""), anchor_id="mentor_card_last")
+    render_mentor_card(
+        _last.get("theme", "Clarity"),
+        _last.get("insight", ""),
+        _last.get("mantra", ""),
+        anchor_id="mentor_card_last",
+    )
     if st.button("Dismiss guidance", key="dismiss_last_mentor"):
-        st.session_state.pop("last_mentor", None); st.rerun()
+        st.session_state.pop("last_mentor", None)
+        st.rerun()
 
-# Download MD
 if _last and (_last.get("insight") or _last.get("mantra")):
     md_text = build_reflection_markdown(
         created_at=None,
-        theme=_last.get("theme",""),
-        reflection=st.session_state.get("last_reflection",""),
-        insight=_last.get("insight",""),
-        mantra=_last.get("mantra",""),
-        tags=[t.strip() for t in st.session_state.get("tags_raw","").split(",") if t.strip()],
+        theme=_last.get("theme", ""),
+        reflection=st.session_state.get("last_reflection", ""),
+        insight=_last.get("insight", ""),
+        mantra=_last.get("mantra", ""),
+        tags=[t.strip() for t in st.session_state.get("tags_raw", "").split(",") if t.strip()],
         mood=st.session_state.get("mood"),
         stillness_note=st.session_state.get("stillness_note"),
     )
-    st.download_button("⬇️ Download as Markdown", data=md_text.encode("utf-8"), file_name="reflection.md", mime="text/markdown", key="dl_md_last")
+    st.download_button(
+        "⬇️ Download as Markdown",
+        data=md_text.encode("utf-8"),
+        file_name="reflection.md",
+        mime="text/markdown",
+        key="dl_md_last",
+    )
 
+# --- Reflective Mind card (appears after submit) ---
+if st.session_state.get("last_journal_ai"):
+    render_journal_insight(st.session_state["last_journal_ai"])
+
+# --- Mentor Follow-up (appears once after a successful save) ---
+from agi.followup import render_mentor_followup
+
+last_id = st.session_state.get("last_row_id")
+last_reflection = st.session_state.get("last_reflection")
+last_theme = st.session_state.get("last_theme")
+
+if last_id and last_reflection:
+    render_mentor_followup(
+        theme=last_theme or "Reflection",
+        reflection_text=last_reflection,
+        row_id=str(last_id),  # ensures DB linkage + unique widget keys
+    )
+
+# ----------------------------
 # Regenerate guidance
+# ----------------------------
 st.markdown("---")
 st.subheader("✨ Refine Mentor Guidance")
-theme_for_regen = (st.session_state.get("last_theme") or st.session_state.get("current_theme") or selected_theme)
-regen_reflection = st.text_area("Use your last reflection (or paste a new one) to regenerate guidance.",
-                                value=st.session_state.get("last_reflection",""),
-                                height=140, key="regen_text")
+
+theme_for_regen = (
+    st.session_state.get("last_theme")
+    or st.session_state.get("current_theme")
+    or selected_theme
+)
+
+regen_reflection = st.text_area(
+    "Use your last reflection (or paste a new one) to regenerate guidance.",
+    value=st.session_state.get("last_reflection", ""),
+    height=140,
+    key="regen_text",
+)
+
 if st.button("Regenerate Insight (won’t save automatically)"):
     if not regen_reflection.strip():
         st.warning("Please enter text to regenerate.")
@@ -240,10 +415,12 @@ if st.button("Regenerate Insight (won’t save automatically)"):
             st.error(f"Regeneration failed: {e}")
 
 if st.session_state.get("regen_insight") or st.session_state.get("regen_mantra"):
-    render_mentor_card(theme_for_regen,
-                       st.session_state.get("regen_insight"),
-                       st.session_state.get("regen_mantra"),
-                       anchor_id="mentor_card_regen")
+    render_mentor_card(
+        theme_for_regen,
+        st.session_state.get("regen_insight"),
+        st.session_state.get("regen_mantra"),
+        anchor_id="mentor_card_regen",
+    )
     if st.button("Save this regenerated guidance"):
         try:
             sb.table("user_reflections").insert({
@@ -252,14 +429,14 @@ if st.session_state.get("regen_insight") or st.session_state.get("regen_mantra")
                 "reflection_text": regen_reflection.strip(),
                 "generated_insight": st.session_state.get("regen_insight"),
                 "generated_mantra": st.session_state.get("regen_mantra"),
+                "user_id": st.session_state.get(S_USER_ID),
             }).execute()
             st.success("Regenerated guidance saved.")
         except Exception as e:
             st.error(f"Save failed: {e}")
 
-# Energy + History
-from agi.charts import render_energy_section
-render_energy_section(sb, days=45)
-
-from agi.history import render_recent_reflections
-render_recent_reflections(sb)
+# ----------------------------
+# Energy + History (use the SAME filters)
+# ----------------------------
+render_energy_section(sb, days=flt_days, theme=flt_theme)
+render_recent_reflections(sb, days=flt_days, theme=flt_theme)

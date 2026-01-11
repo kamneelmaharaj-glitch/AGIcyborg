@@ -8,11 +8,11 @@ def resolve_microstep_source(
     final_microstep: str | None,
     guardrail_adjusted: bool,
 ) -> str:
-    # Silence contract always wins
+    # 1) Silence contract always wins
     if silenced:
         return "silence_contract"
 
-    # Rate-limit should be explicit even if we later enforce category/guardrails
+    # 2) Rate-limit should be explicit (even if later enforcement happens)
     if model_rate_limited:
         return "fallback_due_to_rate_limit"
 
@@ -20,21 +20,21 @@ def resolve_microstep_source(
     pre = (pre_category_microstep or "").strip()
     final = (final_microstep or "").strip()
 
-    # If final exactly equals raw model output, it truly came from model
-    if raw and final == raw:
-        return "model"
-
-    # If we used fallback pool at any point, call it fallback (even if category picked a fallback line)
+    # 3) If fallback pool was used at any point, label fallback (wins over adjusted/model)
     if used_fallback:
         return "fallback"
 
-    # If we did not use fallback and final equals the category-selected microstep, it was category-enforced
-    if pre and final == pre:
-        return "category_enforced"
-
-    # If guardrails replaced something, label it clearly
+    # 4) Guardrails replacing content is a stronger signal than category enforcement
     if guardrail_adjusted:
         return "guardrail_replaced"
 
-    # Last resort: model was used but something modified it
+    # 5) If final exactly equals raw model output, it came from the model
+    if raw and final == raw:
+        return "model"
+
+    # 6) If we didn't use fallback and final equals the category-selected microstep, it was enforced
+    if pre and final == pre:
+        return "category_enforced"
+
+    # 7) Last resort: model was used but something modified it
     return "model_adjusted"

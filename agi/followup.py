@@ -7,7 +7,7 @@ from typing import List, Tuple, Optional
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 
-from agi.ai import ai_generate
+from agi.deepen_ai import generate_deepen_insight
 from agi.auth import S_USER_ID
 from agi.orb import render_breath_orb
 from agi.presence import PRESENCE_TOGGLE_KEY, render_presence_widget
@@ -189,6 +189,7 @@ def _ensure_fu_css() -> None:
     st.markdown(
         """
 <style>
+/* ---------------- Follow-up ribbon ---------------- */
 .fu-ribbon {
   margin-top: .5rem;
   padding: .6rem .8rem;
@@ -205,11 +206,84 @@ def _ensure_fu_css() -> None:
   0%   { box-shadow: 0 0 0 0 rgba(64,255,160,.35); }
   100% { box-shadow: 0 0 0 22px rgba(64,255,160,0); }
 }
+
 .fu-history-item {
   padding:.6rem .75rem;
   border:1px solid rgba(255,255,255,.08);
   border-radius:.75rem;
 }
+
+/* ---------------- Micro-step card ---------------- */
+.micro-main {
+  animation: microFadeIn .45s ease-out;
+}
+
+@keyframes microFadeIn {
+  0%   { opacity:0; transform: translateY(4px); }
+  100% { opacity:1; transform: translateY(0); }
+}
+
+.micro-header {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  margin-bottom:.4rem;
+}
+
+.micro-label {
+  font-size:.86rem;
+  text-transform:uppercase;
+  letter-spacing:.16em;
+  opacity:.78;
+}
+
+.micro-theme-pill {
+  padding:.15rem .6rem;
+  border-radius:999px;
+  border:1px solid rgba(255,255,255,.20);
+  font-size:.8rem;
+  opacity:.85;
+}
+
+.micro-body {
+  margin-top:.3rem;
+  font-size:.92rem;
+}
+
+.micro-tiny-label {
+  font-size:.8rem;
+  text-transform:uppercase;
+  letter-spacing:.14em;
+  opacity:.72;
+}
+
+.micro-tiny-text {
+  margin-top:.15rem;
+  opacity:.96;
+}
+
+.micro-why {
+  margin-top:.45rem;
+  font-size:.9rem;
+  color:rgba(255,255,255,.78);
+}
+
+.micro-streak-row {
+  margin-top:.55rem;
+  font-size:.8rem;
+  opacity:.8;
+}
+
+.micro-streak-row .value {
+  font-weight:600;
+  opacity:.92;
+}
+
+.micro-streak-row .dot {
+  margin:0 .35rem;
+}
+
+/* History rows reuse existing styling but stay minimal */
 </style>
         """,
         unsafe_allow_html=True,
@@ -255,73 +329,6 @@ def _fmt_when(ts: Optional[str]) -> str:
         return dt.strftime("%b %d, %Y • %H:%M UTC")
     except Exception:
         return ts or "—"
-
-
-# ---------------------------------------------------------------------------
-# AI helpers (Deepen)
-# ---------------------------------------------------------------------------
-
-_SYSTEM_PRIMER = (
-    "You are a compassionate mentor. Speak simply and briefly. "
-    "Offer one gentle insight and one tiny 2-minute action."
-)
-
-
-def _compose_prompt(
-    theme: str,
-    reflection_text: str,
-    followup_note: str,
-    recent_followups: Optional[List[str]],
-) -> str:
-    history = " • ".join((recent_followups or [])[-5:]) or "—"
-    return (
-        f"[SYSTEM]\n{_SYSTEM_PRIMER}\n\n"
-        f"[CONTEXT]\nTheme: {theme}\n"
-        f"Reflection: {reflection_text.strip()}\n"
-        f"Follow-up note: {followup_note.strip()}\n"
-        f"Recent follow-ups: {history}\n\n"
-        "[TASK]\n"
-        "Return exactly two lines:\n"
-        "INSIGHT: <one sentence>\n"
-        "MICROSTEP: <one tiny step I can do in < 2 minutes>"
-    )
-
-
-def _generate_deepen_insight(
-    theme: str,
-    reflection_text: str,
-    followup_note: str,
-    recent_followups: Optional[List[str]],
-) -> Tuple[str, str]:
-    """
-    Use ai_generate(theme, text) -> (insight, microstep_like).
-
-    We are tolerant of prefixes like 'INSIGHT:' / 'MICROSTEP:' and we
-    guarantee that the returned microstep is non-empty by falling back
-    to the note / insight if needed.
-    """
-    prompt = _compose_prompt(theme, reflection_text, followup_note, recent_followups)
-    raw_insight, raw_second = ai_generate(theme, prompt)
-
-    def strip_prefix(s: str) -> str:
-        s = (s or "").strip()
-        for pfx in ("INSIGHT:", "Insight:", "MICROSTEP:", "Microstep:"):
-            if s.startswith(pfx):
-                return s[len(pfx):].strip()
-        return s
-
-    insight = strip_prefix(raw_insight)
-    microstep = strip_prefix(raw_second)
-
-    # Fallback: if model did not give us a useful second line, synthesize one
-    if not microstep:
-        base = (followup_note or "").strip() or insight or "this reflection"
-        microstep = (
-            "Take one tiny 2-minute action today to honour this: "
-            f"{base}"
-        )
-
-    return insight, microstep
 
 
 # ---------------------------------------------------------------------------
@@ -436,26 +443,41 @@ def render_followup_analytics(
 
 def _set_microstep_done(sb, row_id: str, done: bool) -> None:
     """
-    Mark a micro-step as done/undone by setting microstep_done_at.
-    Best-effort: errors are swallowed so the UI never crashes.
+    Mark a micro-step as done/undone.
+
+    We update:
+      - microstep_done_at  (timestamp or NULL)
+      - completion_status  (boolean)
+      - completion_at      (timestamp or NULL)
+
+    Any DB error is surfaced in the UI so we can see RLS / permission issues.
     """
-    if not sb or not row_id:
+    if not (sb and row_id):
         return
 
     try:
+        now_iso = _iso_utc()
+
         payload = {
-            "microstep_done_at": _iso_utc() if done else None,
+            "microstep_done_at": now_iso if done else None,
+            "completion_status": bool(done),
+            "completion_at":     now_iso if done else None,
         }
-        (
+
+        res = (
             sb.table("user_followup_ai")
               .update(payload)
               .eq("id", row_id)
               .execute()
         )
-    except Exception:
-        # If the column doesn't exist, we just don't persist the done state.
-        pass
 
+        # Optional tiny debug hook if you ever want to inspect
+        st.session_state[f"_last_ms_update::{row_id}"] = getattr(res, "data", None)
+
+    except Exception as e:
+        # ⚠️ Do NOT swallow this – we need to see any RLS / SQL errors
+        st.error(f"Micro-step update failed: {e}")
+        
 def _microstep_streak(
     sb,
     user_id: str,
@@ -571,6 +593,7 @@ def _parse_ts(ts: Optional[str]) -> Optional[datetime]:
         return None
 
 
+# Microstep Widget
 def render_microstep_widget(sb, user_id: str) -> None:
     """
     Show 'Today’s micro-step' under the orb.
@@ -578,16 +601,19 @@ def render_microstep_widget(sb, user_id: str) -> None:
     - Main card: latest micro-step *from today* (UTC)
     - History: all micro-steps from the last 7 days
     """
-    # Ensure we have a DB client + user id
+
+    # --- Ensure we have DB + user id ---
     if sb is None:
         sb = _get_sb()
     if not user_id:
         user_id = st.session_state.get(S_USER_ID)
+    if not (sb and user_id):
+        return
 
-    # --- Load all recent micro-steps ---
+    # --- Load recent micro-steps (last 7 days) ---
     rows = _list_microsteps(sb, user_id=user_id, days=7)
 
-    # 🔹 Compute micro-step streak numbers
+    # Streak + completion analytics (based on microstep_done_at)
     streak, completed_7, completed_30 = _microstep_streak(sb, user_id)
 
     # Filter to "today only" for the main card
@@ -598,48 +624,37 @@ def render_microstep_widget(sb, user_id: str) -> None:
         if dt and dt.date() == today:
             today_rows.append(r)
 
+    # Rows from _list_microsteps are already newest-first;
+    # taking [0] gives us the latest micro-step for today.
     latest = today_rows[0] if today_rows else None
 
     # --- Main card container ---
     box = st.container(border=True)
     with box:
         followup_id = (latest or {}).get("id")
-        done_key = f"microstep_done::{followup_id}" if followup_id else "microstep_done::none"
+        done_key = (
+            f"microstep_done::{followup_id}"
+            if followup_id
+            else "microstep_done::none"
+        )
 
+        # True/False coming from the database (via _list_microsteps)
         is_done_db = bool((latest or {}).get("done"))
-        is_done_state = bool(st.session_state.get(done_key, False))
-        is_done = is_done_db or is_done_state
 
-        title = "🧭 Today’s micro-step"
-        if is_done and followup_id:
-            title += " ✅"
-
-        st.subheader(title)
-
-        if not latest:
-            st.caption(
-                "No micro-steps for today yet. After you use **Deepen** on a reflection, "
-                "your tiny action for today will appear here."
-            )
-        else:
+        if latest:
+            # ----- Today card (has a micro-step) -----
             theme = (latest.get("theme") or "Reflection").strip() or "Reflection"
             created_at = _fmt_when(latest.get("created_at"))
             micro_text = latest.get("micro_text", "—")
 
+            st.markdown("### Today’s micro-step")
             st.caption(f"{theme} • Last follow-up: {created_at}")
             st.write(f"**Tiny action:** {micro_text}")
 
-            # 🌱 Step 2: “Why this matters” line
             why_line = _why_it_matters_line(theme, micro_text)
-            st.markdown(
-                f"<div style='color:rgba(255,255,255,.75); "
-                f"font-size:.9rem; margin-top:.4rem;'>"
-                f"🪷 <em>{why_line}</em>"
-                f"</div>",
-                unsafe_allow_html=True,
-            )
+            st.markdown(f"🪷 *{why_line}*")
 
-            # 🔹 Streak line
+            # Streak line
             if streak > 0:
                 st.caption(
                     f"Streak: {streak} day{'s' if streak != 1 else ''} in a row • "
@@ -650,17 +665,25 @@ def render_microstep_widget(sb, user_id: str) -> None:
                     "Streak: Begin your first day by completing this tiny action ✨"
                 )
 
-            # ✅ Done toggle (always available when there is a microstep today)
+            # ✅ Done toggle
             new_done = st.checkbox(
                 "Mark this micro-step as done for today",
-                value=is_done,
+                value=is_done_db,        # initial state from DB
                 key=done_key,
             )
 
-            if new_done != is_done and followup_id and sb and user_id:
+            # If the user changed the value compared to DB, persist it
+            if followup_id and sb and user_id and (new_done != is_done_db):
                 _set_microstep_done(sb, followup_id, new_done)
-                st.session_state[done_key] = new_done
                 st.rerun()
+
+        else:
+            # ----- Empty-state card (no micro-step for today) -----
+            st.markdown("### Today’s micro-step")
+            st.caption(
+                "No micro-steps for today yet. After you use **Deepen** on a reflection, "
+                "your tiny action for today will appear here."
+            )
 
     # --- Micro-step history (last 7 days) ---
     if not rows:
@@ -681,7 +704,10 @@ def render_microstep_widget(sb, user_id: str) -> None:
 
                 c1, c2 = st.columns([2, 1])
                 with c1:
-                    st.write("**Status:** " + ("✅ marked done" if done else "⏳ not marked done"))
+                    st.write(
+                        "**Status:** "
+                        + ("✅ marked done" if done else "⏳ not marked done")
+                    )
 
                 if rid and sb and user_id:
                     with c2:
@@ -701,8 +727,10 @@ def render_microstep_widget(sb, user_id: str) -> None:
                             ):
                                 _set_microstep_done(sb, rid, True)
                                 st.rerun()
+
+
 # ---------------------------------------------------------------------------
-# Persistence (user_reflections + user_followup_ai)
+# Persistence helpers for Deepen (user_followup_ai)
 # ---------------------------------------------------------------------------
 
 def _save_followup_note_to_latest(sb, user_id: str, note: str) -> Optional[str]:
@@ -735,7 +763,7 @@ def _save_followup_note_to_latest(sb, user_id: str, note: str) -> Optional[str]:
     return rid
 
 
-def _fetch_recent_followups(sb, user_id: str) -> List[str]:
+def _fetch_recent_followups(sb, user_id: str) -> list[str]:
     """Recent follow-up notes (for AI context)."""
     try:
         res = (
@@ -786,26 +814,75 @@ def _save_followup_ai(
     }
 
     try:
-        res = sb.table("user_followup_ai").insert(payload).execute()
-        # Optional debug, you can remove after things work:
-        inserted_id = (res.data or [{}])[0].get("id")
-        st.caption(f"DEBUG: follow-up saved (id={inserted_id})")
+        sb.table("user_followup_ai").insert(payload).execute()
         return True
     except Exception as e:
-        # ⬅️ This is the message we really need to see
         st.error(f"Couldn’t save follow-up (DB error): {e}")
         return False
+
+
+def _load_latest_followup_ai(
+    sb,
+    user_id: Optional[str],
+    reflection_id: Optional[str],
+    theme: str,
+) -> dict:
+    """
+    Load the most recent (insight, microstep) for this reflection or theme.
+
+    This lets the Deepen card show persisted AI even after a fresh reload.
+    """
+    if not (sb and user_id):
+        return {}
+
+    try:
+        q = (
+            sb.table("user_followup_ai")
+              .select("insight, microstep")
+              .eq("user_id", user_id)
+        )
+        if reflection_id:
+            q = q.eq("reflection_id", reflection_id)
+        else:
+            # Fallback: last Deepen for this theme
+            q = q.eq("theme", (theme or "").strip() or "Reflection")
+
+        res = q.order("created_at", desc=True).limit(1).execute()
+        rows = res.data or []
+        if not rows:
+            return {}
+        row = rows[0]
+        return {
+            "insight": (row.get("insight") or "").strip(),
+            "microstep": (row.get("microstep") or "").strip(),
+        }
+    except Exception:
+        return {}
+
 
 # ---------------------------------------------------------------------------
 # UI building blocks
 # ---------------------------------------------------------------------------
 
 def _render_ai_card(theme: str, insight: str, microstep: str) -> None:
-    card = st.container(border=True)
-    with card:
-        st.caption(f"Deepen Mentor — {theme or 'Reflection'}")
-        st.write(f"**Insight:** {insight or '—'}")
-        st.write(f"**Micro-step:** {microstep or '—'}")
+    theme_safe = (theme or "Reflection").strip() or "Reflection"
+
+    st.markdown(
+        f"""
+<div class="deepen-ai-card theme-{theme_safe}">
+  <div class="deepen-ai-card-header">DEEPEN MENTOR</div>
+  <div class="deepen-ai-card-theme">{theme_safe}</div>
+
+  <div class="deepen-ai-card-section-label">INSIGHT</div>
+  <p>{(insight or "Once you save a deepen note for this reflection, your distilled insight will appear here.")}</p>
+
+  <div class="deepen-ai-card-section-label">MICRO-STEP</div>
+  <p>{(microstep or "A tiny 2-minute action will be suggested here, based on today’s note.")}</p>
+</div>
+""",
+        unsafe_allow_html=True,
+    )
+
 
 # ---------------------------------------------------------------------------
 # Public API — Deepen main panel
@@ -820,51 +897,95 @@ def render_mentor_followup(
     Main entry point used by app.py.
 
     Layout:
-      • Top: Deepen note editor + Save button + one-time ribbon
-      • Right column: latest AI (Insight + Micro-step)
+      • Left: Deepen note editor + Save button + one-time ribbon
+      • Right: latest AI (Insight + Micro-step) in a unified card
       • Below: analytics strip
     """
     _ensure_fu_css()
     sb = _get_sb()
     user_id = st.session_state.get(S_USER_ID)
 
+    theme_label = (theme or "Reflection").strip() or "Reflection"
+
     # Scope keys per reflection (or theme fallback) to avoid collisions
-    scope = row_id or f"theme::{theme or 'default'}"
+    scope = row_id or f"theme::{theme_label or 'default'}"
     res_key = f"deepen_ai::{scope}"
     rib_key = f"fu_ribbon::{scope}"
     note_key = f"followup_quick_note::{scope}"
 
+    # ----- Deepen focus theme (user-selectable) -----------------------------
+    THEME_CHOICES = [
+        "Presence",
+        "Clarity",
+        "Courage",
+        "Compassion",
+        "Purpose",
+        "Balance",
+        "Discipline",
+        "Devotion",
+        "Surrender",
+        "Calm-Sage",
+    ]
+
+    theme_key = f"deepen_theme::{scope}"
+
+    # Default to incoming theme if it’s one of our known choices, else Clarity
+    default_theme = theme_label if theme_label in THEME_CHOICES else "Clarity"
+    selected_theme = st.session_state.get(theme_key, default_theme)
+
+    # Initialise session store for this scope, and hydrate from DB on first load
     if res_key not in st.session_state:
         st.session_state[res_key] = {"insight": "", "microstep": ""}
+
+        stored_db = _load_latest_followup_ai(sb, user_id, row_id, selected_theme)
+        if stored_db:
+            st.session_state[res_key] = stored_db
 
     box = st.container(border=True)
     with box:
         st.caption("Mentor follow-up")
-        st.subheader(f"Deepen — {theme or 'Reflection'}")
-        st.write(
-            "Gently explore one next thread from your reflection. "
-            "Jot a single sentence intention."
+        st.subheader("Deepen")
+
+        # Header row: shows the *current Deepen focus* (not the reflection pillar)
+        cols = st.columns([2, 2])
+        with cols[0]:
+            st.markdown(f"**{selected_theme}** — 1 thread • 1 tiny step")
+        with cols[1]:
+            selected_theme = st.selectbox(
+                "Deepen focus",
+                THEME_CHOICES,
+                index=THEME_CHOICES.index(selected_theme),
+                key=theme_key,
+            )
+
+        st.caption(
+            "Name one intention from this reflection. "
+            "Deepen Mentor will mirror it back into a tiny action for today."
         )
 
         # Context tail line (last line of reflection)
         last_line = (reflection_text or "").strip().splitlines()[-1:] or [""]
         if last_line and last_line[0]:
             st.caption(f"Last note: “{last_line[0]}”")
+            st.markdown("<div style='margin-top:-0.1rem'></div>", unsafe_allow_html=True)
 
         left, right = st.columns([3, 1], gap="large")
 
         # ----- Left column: editor + save + ribbon -----
         with left:
             note = st.text_area(
-                "Quick deepen note (optional, saved)",
+                "One-line deepen note (saved)",
                 key=note_key,
                 height=110,
-                placeholder="E.g., 'One small step I’ll take in the next hour is…'",
+                placeholder="E.g., “One small thing I want to honour here is…”",
             )
+            st.markdown("<div style='margin-top:-0.15rem'></div>", unsafe_allow_html=True)
 
-            if st.button("💾 Save follow-up", key=f"save_followup::{scope}"):
+            if st.button("💾 Save & mirror into a tiny step", key=f"save_followup::{scope}"):
                 if not sb or not user_id:
                     st.warning("Not signed in or DB unavailable.")
+                elif not (note or "").strip():
+                    st.warning("Please write a short deepen note before saving.")
                 else:
                     # 1) Save to latest reflection + generate AI result
                     try:
@@ -875,12 +996,13 @@ def render_mentor_followup(
                         )
 
                         recent = _fetch_recent_followups(sb, user_id)
-                        insight, microstep = _generate_deepen_insight(
-                            theme=theme or "",
-                            reflection_text=reflection_text or "",
-                            followup_note=note or "",
+                        insight, microstep = generate_deepen_insight(
+                            theme=selected_theme,
+                            reflection_text=reflection_text,
+                            followup_note=note,
                             recent_followups=recent,
                         )
+
                         st.session_state[res_key] = {
                             "insight": insight,
                             "microstep": microstep,
@@ -889,12 +1011,12 @@ def render_mentor_followup(
                     except Exception as e:
                         st.error(f"Couldn’t generate follow-up: {e}")
                     else:
-                        # 2) Save to user_followup_ai (this is where Supabase might fail)
+                        # 2) Save to user_followup_ai
                         ok = _save_followup_ai(
                             sb,
                             user_id=user_id,
                             reflection_id=reflection_id,
-                            theme=theme or "",
+                            theme=selected_theme,
                             note=note or "",
                             insight=insight,
                             microstep=microstep,
@@ -909,20 +1031,20 @@ def render_mentor_followup(
             # — Ribbon (shows once, then clears) —
             if st.session_state.get(rib_key):
                 st.markdown(
-                    '<div class="fu-ribbon">✅ Follow-up saved and deepened.</div>',
+                    '<div class="fu-ribbon">✅ Deepen saved. A tiny action has been added below.</div>',
                     unsafe_allow_html=True,
                 )
                 st.session_state.pop(rib_key, None)
 
-        # ----- Right column: current AI card -----
+        # ----- Right column: current AI card (unified pattern) -----
         with right:
             stored = st.session_state.get(res_key, {})
             _render_ai_card(
-                theme,
+                selected_theme,
                 stored.get("insight", ""),
                 stored.get("microstep", ""),
             )
 
         # ----- Analytics strip (theme-aware) -----
         if sb and user_id:
-            render_followup_analytics(sb, user_id, theme=theme or None)
+            render_followup_analytics(sb, user_id, theme=selected_theme or None)

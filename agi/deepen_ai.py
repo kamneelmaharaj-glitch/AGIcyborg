@@ -1612,7 +1612,7 @@ def generate_deepen_insight(
 
     # Track sources (A)
     insight_source = "model" if (insight or "").strip() else "fallback"
-    microstep_source = "model" if (microstep or "").strip() else "fallback"
+    
 
     used_fallback = False
     shaped = False
@@ -1657,7 +1657,6 @@ def generate_deepen_insight(
     if not (microstep or "").strip():
         microstep = THEME_FALLBACK_MICROSTEP.get(theme_label, THEME_FALLBACK_MICROSTEP["Clarity"])
         used_fallback = True
-        microstep_source = "fallback"
         _dp("microstep=fallback")
 
     # -------------------------
@@ -1736,7 +1735,6 @@ def generate_deepen_insight(
 
         category_adjusted = True
         used_fallback = True
-        microstep_source = "fallback"
 
         dbg["fallback_rotated"] = ((microstep or "").strip() != (base_fallback or "").strip())
         dbg["fallback_rotated_from"] = base_fallback
@@ -1763,7 +1761,6 @@ def generate_deepen_insight(
     ):
         guardrail_adjusted = True
         used_fallback = True
-        microstep_source = "fallback"
         _dp("guardrails=replaced")
 
         guard_cat = (chosen_category or base_category or "posture")
@@ -1795,7 +1792,6 @@ def generate_deepen_insight(
         microstep = "Place one hand on your chest."
         used_fallback = True
         guardrail_adjusted = True
-        microstep_source = "fallback"
         _dp("hard_safe=fired")
 
     # -------------------------
@@ -1812,7 +1808,6 @@ def generate_deepen_insight(
         microstep = rotated
         microstep_reused = True
         repeat_avoided = True
-        microstep_source = "fallback"
         _dp("repeat_rotated")
 
         if isinstance(repeat_meta, dict):
@@ -1841,6 +1836,7 @@ def generate_deepen_insight(
         final_microstep=dbg.get("final_microstep") or "",
         guardrail_adjusted=bool(dbg.get("guardrail_adjusted")),
 )
+    microstep_source = dbg["microstep_source"]
 
     if not insight:
         insight = (
@@ -1854,7 +1850,6 @@ def generate_deepen_insight(
     # If model was rate-limited, make sources explicit (B)
     if model_rate_limited:
         insight_source = "fallback_due_to_rate_limit" if insight_source == "fallback" else insight_source
-        microstep_source = "fallback_due_to_rate_limit" if microstep_source == "fallback" else microstep_source
 
     # -------------------------
     # 13) Debug capture (A.4 + C5)
@@ -1885,7 +1880,7 @@ def generate_deepen_insight(
         "pre_category_microstep": pre_category_microstep,
 
         "insight_source": insight_source,
-        "microstep_source": microstep_source,
+        "microstep_source": dbg.get("microstep_source", "fallback"),
         "decision_path": " > ".join(decision_path),
 
         "insight_tone_adjusted": bool(insight_tone_adjusted),

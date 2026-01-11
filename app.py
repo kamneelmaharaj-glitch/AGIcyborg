@@ -19,7 +19,11 @@ from agi.metrics import render_user_metrics
 
 from agi.ai import ai_generate
 from agi.presence import render_presence_section
-from agi.questions import get_guided_questions, shuffle_guided_questions
+from agi.questions import (
+    get_guided_questions,
+    shuffle_guided_questions,
+    get_theme_blurb,
+)
 from agi.mentor import render_mentor_card
 from agi.energy import compute_energy_score, compute_presence_score
 from agi.export import build_reflection_markdown
@@ -29,6 +33,7 @@ from agi.ui import inject_global_css
 from agi.mirror import render_mirror_panel
 from agi.journal_ai import build_journal_insight, render_journal_insight
 from agi.followup import render_mentor_followup, render_microstep_widget, render_today_panel
+from agi.reflection_ui import render_reflection_header
 
 # ----------------------------
 # Boot
@@ -127,8 +132,10 @@ def _prompt_label(i: int) -> str:
     p = prompts[i]
     theme = p["theme"]
     snippet = p["prompt"][:72] + ("…" if len(p["prompt"]) > 72 else "")
-    # We can add badges later using analytics, but keep it clean for now.
     return f"{theme} — {snippet}"
+
+# Remember last prompt (for detecting changes)
+prev_prompt_id = st.session_state.get("current_prompt_id")
 
 idx = st.session_state.get("prompt_idx", 0)
 idx = min(idx, len(prompts) - 1)
@@ -142,194 +149,360 @@ sel_idx = st.selectbox(
 )
 st.session_state["prompt_idx"] = sel_idx
 
-# 🔹 make sure these come *before* we call render_presence_section
 selected = prompts[sel_idx]
 selected_prompt_id = str(selected["id"])
 selected_theme = selected["theme"]
 st.session_state["current_theme"] = selected_theme
+
+# 🔹 If the prompt changed, clear the reflection draft + local context
+if prev_prompt_id and prev_prompt_id != selected_prompt_id:
+    for k in [
+        "reflection_text",
+        "reflection_mood",
+        "reflection_tags",
+        "reflection_stillness",
+    ]:
+        st.session_state.pop(k, None)
+    # Clear the used guided-question set for the *new* prompt
+    st.session_state[f"used_q::{selected_prompt_id}"] = set()
+
+st.session_state["current_prompt_id"] = selected_prompt_id
 
 # ----------------------------
 # Today’s micro-step card
 # ----------------------------
 render_today_panel(sb, user_id)
 
+
+selected = prompts[sel_idx]
+selected_prompt_id = str(selected["id"])
+selected_theme = selected["theme"]
+st.session_state["current_theme"] = selected_theme
+
+# Ensure reflection_text exists in session state
+if "reflection_text" not in st.session_state:
+    st.session_state["reflection_text"] = ""
+
 # ----------------------------
 # Guided Questions
 # ----------------------------
-qs = get_guided_questions(selected_theme, selected_prompt_id, k=3)
-used_qs = st.session_state.get(f"used_q::{selected_prompt_id}", set())
+
+# Fetch a fresh set from the helper for this theme + prompt
+base_qs = get_guided_questions(selected_theme, selected_prompt_id, k=3) or []
+
+# Keys to keep per-prompt state
+bank_key = f"guided_bank::{selected_prompt_id}"
+used_key = f"used_q::{selected_prompt_id}"
+
+# 1) Initialise the bank the first time we see this prompt
+if bank_key not in st.session_state:
+    st.session_state[bank_key] = list(base_qs)
+
+# 2) If the bank somehow became empty, repopulate from base_qs
+if not st.session_state[bank_key] and base_qs:
+    st.session_state[bank_key] = list(base_qs)
+
+qs = list(st.session_state[bank_key] or [])
+used_qs = st.session_state.get(used_key, set())
+
+# Nicely formatted theme label
+theme_label = selected_theme or "Reflection"
+
+# Header row with shuffle button + tiny legend
+hdr_left, hdr_right = st.columns([5, 1])
+with hdr_left:
+    st.markdown(f"### 🪞 Guided questions for **{theme_label}**")
+    st.caption(
+        "Tap a question to send it into your reflection box. "
+        "New questions are marked 🆕, ones you've used before are marked ↺."
+    )
+with hdr_right:
+    if st.button(
+        "⟳ Shuffle",
+        key=f"shuffle::{selected_prompt_id}",
+        help="Try different questions",
+    ):
+        bank = list(st.session_state.get(bank_key, base_qs))
+        if bank:
+            import random
+
+            random.shuffle(bank)
+            st.session_state[bank_key] = bank
+        st.rerun()
+
+# Pull the current ordered list after any shuffle
+qs = list(st.session_state.get(bank_key, base_qs) or [])
+
 if qs:
-    st.markdown(f"#### 🪞 Guided Questions for **{selected_theme}**")
     cols = st.columns(min(3, len(qs)))
     for i, q in enumerate(qs):
         is_new = q not in used_qs
-        label = f"➕ {q}" if is_new else f"✨ {q}"
+
+        # Badge prefix depending on whether we've used this question already
+        prefix = "🆕 " if is_new else "↺ "
+        label = prefix + q
+
         with cols[i % len(cols)]:
             if st.button(label, key=f"gqbtn::{selected_prompt_id}::{i}"):
                 prev = st.session_state.get("reflection_text", "")
-                st.session_state["reflection_text"] = (
-                    prev + ("\n\n" if prev else "") + q + "\n"
-                ).strip()
+
+                # Nicely formatted insertion block:
+                question_block = f"Q: {q}\n\n"
+
+                # If there is already text and it doesn't end with a blank line,
+                # add one to separate sections.
+                if prev and not prev.endswith("\n\n"):
+                    prev = prev.rstrip() + "\n\n"
+
+                st.session_state["reflection_text"] = (prev + question_block).rstrip()
+
+                # Mark this question as used so we can style it differently
+                used_qs.add(q)
+                st.session_state[used_key] = used_qs
+
                 st.rerun()
-    if st.button("🔀 Shuffle Questions", key=f"shuffle::{selected_prompt_id}"):
-        shuffle_guided_questions(selected_prompt_id)
-        st.rerun()
+else:
+    st.caption("No guided questions available for this prompt yet.")
+
+# ---- Handle deferred clear before any widgets are created ----
+if st.session_state.get("_request_clear_reflection"):
+    st.session_state["_request_clear_reflection"] = False
+
+    # Reset both logical + widget-facing keys
+    st.session_state["reflection_text"] = ""
+    st.session_state["reflection_box"] = ""
+
+    # Reset context fields
+    st.session_state["tags_raw"] = ""
+    st.session_state["mood"] = ""
+    st.session_state["stillness_note"] = ""
 
 # ----------------------------
 # Reflection Form
 # ----------------------------
+render_reflection_header(
+    selected_theme,
+    selected.get("prompt", ""),
+)
+
+# Ensure the logical key exists
+if "reflection_text" not in st.session_state:
+    st.session_state["reflection_text"] = ""
+
 with st.form("reflect_form", clear_on_submit=False):
     with st.container(border=True):
         st.caption("Optional context")
+
         c1, c2 = st.columns([1, 1])
+
+        # Mood
         with c1:
             mood = st.selectbox(
                 "Mood (optional)",
-                ["", "Calm", "Focused", "Grateful", "Tender", "Brave", "Curious", "Tired", "Overwhelmed"],
+                ["", "Calm", "Focused", "Grateful", "Tender",
+                 "Brave", "Curious", "Tired", "Overwhelmed"],
                 index=0,
                 key="mood_select",
             )
+
+        # Tags
         with c2:
             tags_raw = st.text_input(
                 "Tags (comma-separated, optional)",
-                value=st.session_state.get("tags_input", ""),
+                value=st.session_state.get("tags_raw", ""),
                 placeholder="e.g. work, family, gratitude",
                 key="tags_input",
             )
+
+        # Stillness note
         stillness_note = st.text_input(
             "Stillness note (optional)",
-            value=st.session_state.get("stillness_note_input", ""),
+            value=st.session_state.get("stillness_note", ""),
             placeholder="A small body-sense you noticed (breath, warmth, ground, etc.)",
             key="stillness_note_input",
         )
 
-    reflection_text = st.text_area(
-    "Your Reflection",
-    value=st.session_state.get("reflection_text", ""),
-    height=180,
-    placeholder="Write honestly. Small and true is enough.",
-    key="reflection_text",
-)
+        # Mirror widget values into logical keys
+        st.session_state["mood"] = mood
+        st.session_state["tags_raw"] = tags_raw
+        st.session_state["stillness_note"] = stillness_note
 
-    use_ai = st.checkbox(
-        "Generate Mentor Insight + Mantra (OpenAI)",
-        value=True,
-        key="use_ai",
-    )
-    submitted = st.form_submit_button("Submit", type="primary")
+        # ---- Your Reflection ----
+        st.markdown("#### Your Reflection")
 
-# Track used guided questions
-used_key = f"used_q::{selected_prompt_id}"
-if st.session_state.get("reflection_text", "").strip():
-    prev_used = st.session_state.get(used_key, set())
-    new_used = prev_used.union(set(st.session_state["reflection_text"].splitlines()))
-    st.session_state[used_key] = new_used
+        st.markdown(
+            """
+            <div class="reflection-helper">
+                Tip: Click any guided question above to drop it into this box,
+                then write your answer underneath it in your own words.
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
-st.session_state["tags_raw"] = st.session_state.get("tags_input", "")
-st.session_state["mood"] = st.session_state.get("mood_select") or ""
-st.session_state["stillness_note"] = st.session_state.get("stillness_note_input", "")
+        # SINGLE source of truth: key="reflection_text"
+        reflection_text = st.text_area(
+            "",
+            height=180,
+            placeholder="Write honestly. Small and true is enough.",
+            key="reflection_text",
+            label_visibility="collapsed",
+        )
+
+        # Mentor toggle
+        generate_insight = st.checkbox(
+            "Generate Mentor Insight + Mantra (OpenAI)",
+            value=True,
+            key="use_ai",
+        )
+
+    # Buttons inside the form
+    col_submit, col_clear = st.columns([4, 1])
+    with col_submit:
+        submitted = st.form_submit_button("Submit")
+    with col_clear:
+        cleared = st.form_submit_button("Clear", type="secondary")
+
+# ---- Clear handler ----
+if cleared:
+    # Don’t touch widget keys directly here – just request a clear
+    st.session_state["_request_clear_reflection"] = True
+    st.session_state[f"used_q::{selected_prompt_id}"] = set()
+    st.rerun()
 
 # ----------------------------
 # Submit handler
 # ----------------------------
 if submitted:
-    if not reflection_text.strip():
+    # 1) Read exactly what the user typed
+    raw_reflection = (st.session_state.get("reflection_text") or "")
+
+    # 2) Validate BEFORE sanitizing
+    if not raw_reflection.strip():
         st.warning("Please enter a reflection before submitting.")
-    else:
-        generated_insight, generated_mantra = None, None
-        theme_used = st.session_state.get("current_theme", selected_theme)
+        st.stop()
 
-        # 1) Optional AI mentor content
-        if use_ai:
-            try:
-                with st.spinner("Invoking Mentor…"):
-                    generated_insight, generated_mantra = ai_generate(theme_used, reflection_text)
-            except Exception as e:
-                st.warning(f"AI generation skipped: {e}")
+    # 3) Sanitize out old debug HTML that may be in stored reflections
+    cleaned_lines = []
+    for line in raw_reflection.splitlines():
+        s = line.strip()
 
-        # 2) Assemble payloads
-        base_row = {
-            "prompt_id":         selected_prompt_id,
-            "theme":             theme_used,
-            "reflection_text":   reflection_text.strip(),
-            "generated_insight": generated_insight,
-            "generated_mantra":  generated_mantra,
-        }
+        # keep blank lines so spacing feels natural
+        if not s:
+            cleaned_lines.append(line)
+            continue
 
-        raw_csv       = (st.session_state.get("tags_raw") or "").strip()
-        tags_list     = [t.strip() for t in raw_csv.split(",") if t.strip()]
-        mood_val      = st.session_state.get("mood") or None
-        stillness_val = (st.session_state.get("stillness_note") or "").strip() or None
+        # old Mirror debug block lines – strip entirely
+        if "mirror-last-mentor" in s:
+            continue
+        if "Mentor:" in s and "<span" in s:
+            continue
 
-        optional_fields = {
-            "mood":           mood_val,
-            "stillness_note": stillness_val,
-            "tags":           tags_list or None,
-            "tags_raw":       raw_csv or None,
-            "source":         "app",
-        }
+        # any pure tag line like <div ...> or </div>
+        if s.startswith("<") and s.endswith(">"):
+            continue
 
-        # 3) Energy / presence scores
+        cleaned_lines.append(line)
+
+    reflection_text = "\n".join(cleaned_lines).strip()
+
+    # If sanitisation wiped everything, block submission
+    if not reflection_text:
+        st.warning("Reflection contains no meaningful content after cleanup.")
+        st.stop()
+
+    # NOTE: no more st.session_state["reflection_text"] = reflection_text here
+
+    generated_insight, generated_mantra = None, None
+    theme_used = st.session_state.get("current_theme", selected_theme)
+
+    if generate_insight:
         try:
-            energy_score   = compute_energy_score(mood_val, reflection_text)
-            presence_score = compute_presence_score(stillness_val)
-        except Exception:
-            energy_score, presence_score = None, None
+            with st.spinner("Invoking Mentor…"):
+                generated_insight, generated_mantra = ai_generate(
+                    theme_used, reflection_text
+                )
+        except Exception as e:
+            st.warning(f"AI generation skipped: {e}")
 
-        energy_fields = {
-            "energy_score":   energy_score,
-            "presence_score": presence_score,
-        }
+    base_row = {
+        "prompt_id":         selected_prompt_id,
+        "theme":             theme_used,
+        "reflection_text":   reflection_text,
+        "generated_insight": generated_insight,
+        "generated_mantra":  generated_mantra,
+    }
 
-        # 4) Save reflection
-        ins = insert_reflection_with_fallbacks(
+    raw_csv       = (st.session_state.get("tags_raw") or "").strip()
+    tags_list     = [t.strip() for t in raw_csv.split(",") if t.strip()]
+    mood_val      = st.session_state.get("mood") or None
+    stillness_val = (st.session_state.get("stillness_note") or "").strip() or None
+
+    optional_fields = {
+        "mood":           mood_val,
+        "stillness_note": stillness_val,
+        "tags":           tags_list or None,
+        "tags_raw":       raw_csv or None,
+        "source":         "app",
+    }
+
+    try:
+        energy_score   = compute_energy_score(mood_val, reflection_text)
+        presence_score = compute_presence_score(stillness_val)
+    except Exception:
+        energy_score, presence_score = None, None
+
+    energy_fields = {
+        "energy_score":   energy_score,
+        "presence_score": presence_score,
+    }
+
+    ins = insert_reflection_with_fallbacks(
+        sb,
+        base_row,
+        optional_fields,
+        energy_fields,
+        user_id=st.session_state.get(S_USER_ID),
+    )
+
+    # Mirror-mode vector update (best-effort)
+    try:
+        from agi.db import upsert_reflection_vector
+        upsert_reflection_vector(
             sb,
-            base_row,
-            optional_fields,
-            energy_fields,
             user_id=st.session_state.get(S_USER_ID),
+            theme=theme_used,
+            energy=energy_score,
+            presence=presence_score,
         )
+    except Exception:
+        pass
 
-        # 5) Update vector series used by Mirror Mode (best-effort)
-        try:
-            from agi.db import upsert_reflection_vector
-            upsert_reflection_vector(
-                sb,
-                user_id=st.session_state.get(S_USER_ID),
-                theme=theme_used,
-                energy=energy_score,
-                presence=presence_score,
-            )
-        except Exception:
-            pass
+    # Persist “last” state for post-submit UI
+    try:
+        if getattr(ins, "data", None) and len(ins.data):
+            st.session_state["last_row_id"] = ins.data[0].get("id")
+    except Exception:
+        pass
 
-        # 6) Persist “last” state for post-submit UI
-        try:
-            if getattr(ins, "data", None) and len(ins.data):
-                st.session_state["last_row_id"] = ins.data[0].get("id")
-        except Exception:
-            pass
+    st.session_state["last_reflection"] = reflection_text
+    st.session_state["last_theme"]      = theme_used
+    st.session_state["last_mentor"]     = {
+        "theme":   theme_used,
+        "insight": generated_insight or "",
+        "mantra":  generated_mantra or "",
+    }
 
-        st.session_state["last_reflection"] = reflection_text.strip()
-        st.session_state["last_theme"]      = theme_used
-        st.session_state["last_mentor"]     = {
-            "theme":   theme_used,
-            "insight": generated_insight or "",
-            "mantra":  generated_mantra or "",
-        }
+    ji = build_journal_insight(
+        reflection_text,
+        energy_score=energy_score,
+        presence_score=presence_score,
+    )
+    st.session_state["last_journal_ai"] = ji
 
-        # 7) Local Reflective Mind card (stored for stable render after rerun)
-        ji = build_journal_insight(
-            reflection_text,
-            energy_score=energy_score,
-            presence_score=presence_score,
-        )
-        st.session_state["last_journal_ai"] = ji
-
-        # 8) Trigger Mirror pulse and refresh layout
-        st.session_state["just_saved"] = True
-        st.success("Reflection saved. Thank you.")
-        st.rerun()
+    st.session_state["just_saved"] = True
+    st.success("Reflection saved. Thank you.")
+    st.rerun()
 
 # ----------------------------
 # Persisted mentor card + download
@@ -382,6 +555,101 @@ if last_id and last_reflection:
         reflection_text=last_reflection,
         row_id=str(last_id),  # ensures DB linkage + unique widget keys
     )
+# ----------------------------
+# Theme patterns (last 3–5 reflections)
+# ----------------------------
+from collections import Counter
+from statistics import mean
+
+def render_theme_patterns(sb, user_id: str, theme: str | None):
+    """Show subtle patterns from the last few reflections for this theme."""
+    if not theme:
+        return
+
+    try:
+        res = (
+            sb.table("user_reflections")
+            .select(
+                "created_at, mood, tags, tags_raw, energy_score, presence_score"
+            )
+            .eq("user_id", user_id)
+            .eq("theme", theme)
+            .order("created_at", desc=True)
+            .limit(5)
+            .execute()
+        )
+    except Exception as e:
+        st.debug(f"pattern fetch failed: {e}")
+        return
+
+    rows = getattr(res, "data", None) or []
+    if len(rows) < 3:
+        with st.expander(f"Subtle patterns in your recent **{theme}** reflections", expanded=False):
+            st.caption("Patterns will start to appear once you have at least 3 reflections for this theme.")
+        return
+
+    moods = [r.get("mood") for r in rows if r.get("mood")]
+    tags_flat = []
+    for r in rows:
+        if isinstance(r.get("tags"), list):
+            tags_flat.extend([t for t in r["tags"] if isinstance(t, str)])
+        raw = (r.get("tags_raw") or "").strip()
+        if raw:
+            tags_flat.extend([t.strip() for t in raw.split(",") if t.strip()])
+
+    energy_vals = [r["energy_score"] for r in rows if r.get("energy_score") is not None]
+    presence_vals = [r["presence_score"] for r in rows if r.get("presence_score") is not None]
+
+    mood_summary = None
+    if moods:
+        c = Counter(moods)
+        top_mood, top_mood_count = c.most_common(1)[0]
+        mood_summary = (top_mood, top_mood_count, len(moods))
+
+    tags_summary = None
+    if tags_flat:
+        c = Counter(tags_flat)
+        tags_summary = [t for t, _ in c.most_common(3)]
+
+    avg_energy = mean(energy_vals) if energy_vals else None
+    avg_presence = mean(presence_vals) if presence_vals else None
+
+    with st.expander(f"Subtle patterns in your recent **{theme}** reflections", expanded=False):
+        st.caption("Looking at your last few reflections for this theme:")
+        bullets = []
+
+        if mood_summary:
+            top_mood, count, total = mood_summary
+            bullets.append(
+                f"• Your mood has most often been **{top_mood}** ({count} out of {total})."
+            )
+
+        if tags_summary:
+            tags_str = ", ".join(f"`{t}`" for t in tags_summary)
+            bullets.append(f"• Themes that keep showing up: {tags_str}.")
+
+        if avg_energy is not None:
+            bullets.append(f"• Your **energy score** is around **{avg_energy:.1f}**.")
+        if avg_presence is not None:
+            bullets.append(f"• Your **presence score** is around **{avg_presence:.1f}**.")
+
+        if not bullets:
+            st.write("No clear patterns yet. Keep reflecting and they’ll appear.")
+        else:
+            for line in bullets:
+                st.write(line)
+
+        st.caption("Let this be gentle information, not judgment.")
+# ----------------------------
+# Theme-level subtle patterns
+# ----------------------------
+theme_for_patterns = (
+    st.session_state.get("last_theme")
+    or st.session_state.get("current_theme")
+    or selected_theme
+)
+
+render_theme_patterns(sb, user_id, theme_for_patterns)
 
 # ----------------------------
 # Regenerate guidance
@@ -434,6 +702,7 @@ if st.session_state.get("regen_insight") or st.session_state.get("regen_mantra")
             st.success("Regenerated guidance saved.")
         except Exception as e:
             st.error(f"Save failed: {e}")
+
 
 # ----------------------------
 # Energy + History (use the SAME filters)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 import streamlit as st
 import textwrap, random, datetime
+from agi.deepen_ai import generate_deepen_insight
 
 # ----------------------------
 # Page / config (must be first)
@@ -342,7 +343,7 @@ with st.form("reflect_form", clear_on_submit=False):
 
         # SINGLE source of truth: key="reflection_text"
         reflection_text = st.text_area(
-            "",
+            "Reflection",  # must be non-empty
             height=180,
             placeholder="Write honestly. Small and true is enough.",
             key="reflection_text",
@@ -371,7 +372,7 @@ if cleared:
     st.rerun()
 
 # ----------------------------
-# Submit handler
+# Submit handler (DROP-IN)
 # ----------------------------
 if submitted:
     # 1) Read exactly what the user typed
@@ -411,17 +412,22 @@ if submitted:
         st.warning("Reflection contains no meaningful content after cleanup.")
         st.stop()
 
-    # NOTE: no more st.session_state["reflection_text"] = reflection_text here
+    # IMPORTANT: do NOT write back into st.session_state["reflection_text"] here
+
+    # Theme resolution (robust)
+    theme_used = (
+        (st.session_state.get("current_theme") or "").strip()
+        or (st.session_state.get("last_theme") or "").strip()
+        or (selected_theme or "").strip()
+        or "Clarity"
+    )
 
     generated_insight, generated_mantra = None, None
-    theme_used = st.session_state.get("current_theme", selected_theme)
 
     if generate_insight:
         try:
             with st.spinner("Invoking Mentor…"):
-                generated_insight, generated_mantra = ai_generate(
-                    theme_used, reflection_text
-                )
+                generated_insight, generated_mantra = ai_generate(theme_used, reflection_text)
         except Exception as e:
             st.warning(f"AI generation skipped: {e}")
 
@@ -435,7 +441,7 @@ if submitted:
 
     raw_csv       = (st.session_state.get("tags_raw") or "").strip()
     tags_list     = [t.strip() for t in raw_csv.split(",") if t.strip()]
-    mood_val      = st.session_state.get("mood") or None
+    mood_val      = (st.session_state.get("mood") or None)
     stillness_val = (st.session_state.get("stillness_note") or "").strip() or None
 
     optional_fields = {
@@ -457,6 +463,7 @@ if submitted:
         "presence_score": presence_score,
     }
 
+    # Write reflection row
     ins = insert_reflection_with_fallbacks(
         sb,
         base_row,
@@ -500,10 +507,28 @@ if submitted:
     )
     st.session_state["last_journal_ai"] = ji
 
+    # --- E: Reflection continuity state (per-user, lightweight) ---
+    try:
+        from agi.persistence.state import upsert_reflection_state
+
+        uid = st.session_state.get(S_USER_ID)
+        if uid:
+            upsert_reflection_state(
+                supabase=sb,
+                user_id=str(uid),
+                theme=theme_used,
+                mood=mood_val,
+                microstep=None,  # reflection submit doesn't generate microstep here
+                last_meaningful_action="saved_reflection",
+                increment_reflection_count=True,
+            )
+    except Exception:
+        # best-effort only (never break submit)
+        pass
+
     st.session_state["just_saved"] = True
     st.success("Reflection saved. Thank you.")
     st.rerun()
-
 # ----------------------------
 # Persisted mentor card + download
 # ----------------------------

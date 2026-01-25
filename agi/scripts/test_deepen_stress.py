@@ -420,6 +420,7 @@ def _run_case(i: int, case: dict) -> tuple[bool, dict]:
         "model_rate_limited",
         "insight_source",
         "microstep_source",
+        "microstep_dominance",
         "decision_path",
     ]
 

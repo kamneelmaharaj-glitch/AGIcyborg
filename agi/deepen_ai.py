@@ -27,6 +27,10 @@ import os
 import re
 from agi.silence_contract import should_silence
 from agi.utils import resolve_microstep_source
+from agi.utils import resolve_microstep_source, resolve_microstep_dominance
+from agi.persistence.state import upsert_reflection_state
+
+from agi.memory import record_reflection_memory
 
 from agi.threads.presence_thread import (
     infer_presence_stage,
@@ -1363,9 +1367,40 @@ def _normalize_mood_for_no_signal(reflection_text: str, followup_note: str, mood
         return "soft"  # or "clear" if you prefer
     return mood
 
+def _silence_stillness_for(mood: str) -> str:
+    """
+    Stillness line used when silence contract is active.
+    Keep it short, neutral, and safe for all moods.
+    """
+    m = (mood or "").strip().lower()
+
+    if m in {"storm", "anger", "intense"}:
+        return "Stillness: unclench your jaw and exhale slowly."
+    if m in {"sad", "heavy", "low"}:
+        return "Stillness: place a hand on your chest and soften your breath."
+    if m in {"anxious", "restless", "wired"}:
+        return "Stillness: feel your feet and take one slow breath."
+    if m in {"soft", "calm", "neutral"}:
+        return "Stillness: return to one easy breath."
+
+    return "Stillness: return to one calm breath."
+
+def _silence_output(*, mood: str) -> tuple[str, None, str]:
+    """
+    IMPORTANT: Always return (stillness, insight, microstep).
+    For silence contract: insight must be None (by contract),
+    microstep should be a gentle default microstep string.
+    """
+    stillness = _silence_stillness_for(mood)
+    insight = None
+    microstep = "Return to one calm breath."
+    return stillness, insight, microstep
+
 # -------------------------------------------------------------------
 # Public API
 # -------------------------------------------------------------------
+print("ENTERED generate_deepen_insight")
+
 
 def generate_deepen_insight(
     theme: str,
@@ -1390,7 +1425,10 @@ def generate_deepen_insight(
        12) Final polish
        13) Debug capture (A.4 + C5)
     """
-
+    silenced = False
+    silence_reason = None
+    dbg = {}
+    
     theme_label = (theme or "Reflection").strip() or "Reflection"
     recent_followups = list(recent_followups or [])
 
@@ -1439,17 +1477,36 @@ def generate_deepen_insight(
     dbg["norm_text_preview"] = norm_text[:80]
     _dp(f"mood={mood}")
 
+    grounded = mood in ("drained", "soft") and not silenced
+
     # -------------------------
     # 1) C5 — Silence gate (BEFORE any AI/model work)
     # -------------------------
+    subdued_mode = bool(os.getenv("AGI_SUBDUED_MODE_DEFAULT", "0") == "1")
+    # OR if you pass from UI, use that value instead
     silenced, silence_reason = should_silence(
         reflection_text=reflection_text,
         followup_note=followup_note,
         recent_followups=recent_followups,
         mood=mood,
         dbg=dbg,
+        subdued_mode=subdued_mode,
     )
+
+    _last_debug["silenced"] = bool(silenced)
+    _last_debug["silence_reason"] = silence_reason
+    _last_debug["silence_rule"] = dbg.get("silence_rule") or dbg.get("rule")
+
     _dp("silence_gate=hit" if silenced else "silence_gate=pass")
+
+    print("SILENCE DBG:", {
+    "mood": mood,
+    "rule": dbg.get("silence_rule"),
+    "len": dbg.get("silence_text_len"),
+    "recent_n": dbg.get("silence_recent_n"),
+    })
+
+    dbg["subdued"] = mood in ("drained", "soft")
 
     # -------------------------
     # Presence thread (D-2b) — DEBUG ONLY (no persistence yet)
@@ -1480,50 +1537,27 @@ def generate_deepen_insight(
 
     if silenced:
         _dp(f"silenced:{silence_reason}")
-        stillness, insight, microstep = _silence_output(mood=mood)
 
+        # IMPORTANT: silence path must still return 3 values
+        stillness = _silence_stillness_for(mood)   # you already have/should have this helper
+        insight = None
+        microstep = ""  # keep string for UI safety (no unpack issues)
+    
+        # capture debug BEFORE returning
         _last_debug.clear()
         _last_debug.update({
             "theme": theme_label,
             "mood": mood,
-
-            "base_category": "",
-            "biased_category": "",
-            "category_bias_reason": "",
-            "chosen_category": "",
-
-            "used_fallback": True,
-            "used_fallback_reason": "silence_contract",
-            "shaped": False,
-            "category_adjusted": False,
-            "guardrail_adjusted": False,
-
-            "model_rate_limited": False,
-            "model_error": "",
-            "raw_model_insight": "",
-            "raw_model_microstep": "",
-
+            "silenced": True,
+            "silence_reason": silence_reason,
             "stillness": stillness,
-            "final_insight": insight,   # None by contract
-            "final_microstep": microstep,
-            "pre_category_microstep": "",
-
+            "final_insight": insight,         # None by contract
+            "final_microstep": microstep,     # safe default
             "insight_source": "silence_contract",
             "microstep_source": "silence_contract",
             "decision_path": " > ".join(decision_path),
 
-            "insight_tone_adjusted": False,
-            "pre_tone_insight": "",
-
-            "theme_signature_strength": "",
-            "theme_signature_hits": 0,
-            "theme_signature_decay": False,
-
-            "silenced": True,
-            "silence_reason": silence_reason,
-            "silence_rule": dbg.get("silence_rule"),
-
-            # Presence debug (D-2b)
+        # presence debug
             "presence_stage_prev": presence_stage_prev,
             "presence_stage_today": presence_stage_today,
             "presence_stage_final": presence_stage_final,
@@ -1532,29 +1566,22 @@ def generate_deepen_insight(
             "presence_drift_hits_prev": presence_drift_prev,
             "presence_drift_hits_new": presence_drift_new,
             "presence_dbg": presence_dbg,
+    })
 
-            # Repeat prevention diagnostics (N/A)
-            "repeat_avoided": False,
-            "microstep_reused": False,
-            "last_microstep": "",
-
-            # Rotation diagnostics (N/A)
-            "fallback_rotated": False,
-            "fallback_rotated_from": "",
-            "fallback_rotated_to": "",
-        })
-
-        _attach_presence_debug(
-            dbg=_last_debug,
-            reflection_text=presence_text,
-            mood=mood,
-            silenced=silenced,
-            silence_reason=silence_reason,
-            presence_stage_prev=presence_stage_prev,
-            presence_drift_hits_prev=presence_drift_prev,
-        )
-
-        return stillness, insight, microstep
+    print("SILENCE CHECK:",
+      "silenced=", silenced,
+      "reason=", silence_reason,
+      "text=", repr(norm_text))
+    
+    _attach_presence_debug(
+        dbg=_last_debug,
+        reflection_text=presence_text,
+        mood=mood,
+        silenced=True,
+        silence_reason=silence_reason,
+        presence_stage_prev=presence_stage_prev,
+        presence_drift_hits_prev=presence_drift_prev,
+    )
 
     # -------------------------
     # Normal path continues
@@ -1745,7 +1772,7 @@ def generate_deepen_insight(
             dbg["repeat_action"] = (repeat_meta.get("repeat_action") or "")
             dbg["repeat_match"] = (repeat_meta.get("repeat_match") or "")
 
-        _dp("category_enforced")
+        _dp("category_applied")
 
     # -------------------------
     # 9) Guardrails
@@ -1827,17 +1854,6 @@ def generate_deepen_insight(
     if microstep and microstep[-1] not in ".!?":
         microstep += "."
 
-    dbg["microstep_source"] = resolve_microstep_source(
-        silenced=bool(dbg.get("silenced")),
-        model_rate_limited=bool(dbg.get("model_rate_limited")),
-        used_fallback=bool(dbg.get("used_fallback")),
-        raw_model_microstep=dbg.get("raw_model_microstep") or "",
-        pre_category_microstep=dbg.get("pre_category_microstep") or "",
-        final_microstep=dbg.get("final_microstep") or "",
-        guardrail_adjusted=bool(dbg.get("guardrail_adjusted")),
-)
-    microstep_source = dbg["microstep_source"]
-
     if not insight:
         insight = (
             THEME_FALLBACK_INSIGHT.get(theme_label)
@@ -1847,12 +1863,36 @@ def generate_deepen_insight(
         used_fallback = True
         insight_source = "fallback"
 
-    # If model was rate-limited, make sources explicit (B)
-    if model_rate_limited:
-        insight_source = "fallback_due_to_rate_limit" if insight_source == "fallback" else insight_source
+    # Rate-limit override (B)
+    if model_rate_limited and insight_source == "fallback":
+        insight_source = "fallback_due_to_rate_limit"
 
     # -------------------------
-    # 13) Debug capture (A.4 + C5)
+    # 12.5) Resolve attribution (FINAL, ONCE)
+    # -------------------------
+    microstep_source = resolve_microstep_source(
+        silenced=silenced,
+        model_rate_limited=model_rate_limited,
+        used_fallback=used_fallback,
+        category_adjusted=category_adjusted,
+        guardrail_adjusted=guardrail_adjusted,
+        raw_model_microstep=raw_second,
+        pre_category_microstep=pre_category_microstep,
+        final_microstep=microstep,
+    )
+
+    microstep_dominance = resolve_microstep_dominance(
+        silenced=False,
+        model_rate_limited=model_rate_limited,
+        used_fallback=used_fallback,
+        guardrail_adjusted=guardrail_adjusted,
+        pre_category_microstep=(pre_category_microstep or "").strip(),
+        raw_model_microstep=(raw_second or "").strip(),
+        final_microstep=microstep,
+    )
+
+    # -------------------------
+    # 13) Debug capture (A.4 + C5) — PURE SNAPSHOT
     # -------------------------
     _last_debug.clear()
     _last_debug.update({
@@ -1880,7 +1920,8 @@ def generate_deepen_insight(
         "pre_category_microstep": pre_category_microstep,
 
         "insight_source": insight_source,
-        "microstep_source": dbg.get("microstep_source", "fallback"),
+        "microstep_source": microstep_source,
+        "microstep_dominance": microstep_dominance,
         "decision_path": " > ".join(decision_path),
 
         "insight_tone_adjusted": bool(insight_tone_adjusted),
@@ -1911,7 +1952,6 @@ def generate_deepen_insight(
         "repeat_avoided": bool(repeat_avoided),
         "microstep_reused": bool(microstep_reused),
         "last_microstep": (recent_followups[-1] if recent_followups else ""),
-        "microstep_source": microstep_source,
 
         "fallback_rotated": bool(dbg.get("fallback_rotated", False)),
         "fallback_rotated_from": (dbg.get("fallback_rotated_from") or ""),
@@ -1926,10 +1966,31 @@ def generate_deepen_insight(
         dbg=_last_debug,
         reflection_text=presence_text,
         mood=mood,
-        silenced=silenced,
-        silence_reason=silence_reason,
+        silenced=False,
+        silence_reason=None,
         presence_stage_prev=presence_stage_prev,
         presence_drift_hits_prev=presence_drift_prev,
     )
+    
+    print("🧠 E1 memory write reached")
+    # --- E1 memory write (record-only, non-intrusive) ---
+    try:
+        from agi.memory import record_reflection_memory
+        mem_rc = record_reflection_memory(
+            theme=theme_label,
+            mood=mood,
+            microstep=microstep,
+            insight=insight if insight else None,
+            silenced=bool(_last_debug.get("silenced", False)),
+            silence_reason=_last_debug.get("silence_reason"),
+            presence_stage=_last_debug.get("presence_stage_final"),
+    )
+        _last_debug["memory"] = mem_rc
+    except Exception as e:
+        _last_debug["memory"] = {"enabled": True, "written": False, "error": str(e)[:160]}
+
+
+
+    print("MEMDBG:", _last_debug.get("memory"))
 
     return stillness, insight, microstep

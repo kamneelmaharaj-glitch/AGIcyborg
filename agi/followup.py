@@ -13,6 +13,15 @@ from agi.orb import render_breath_orb
 from agi.presence import PRESENCE_TOGGLE_KEY, render_presence_widget
 from agi.config import PRESENCE_CYCLE_SEC
 
+# ----------------------------
+# Theme resolution (follow-up)
+# ----------------------------
+def resolve_followup_theme() -> str:
+    return (
+        st.session_state.get("current_theme")
+        or st.session_state.get("last_theme")
+        or "Clarity"
+    )
 
 # Orb Helper CSS
 
@@ -610,6 +619,33 @@ def render_microstep_widget(sb, user_id: str) -> None:
     if not (sb and user_id):
         return
 
+    # --- E2 READ: show last continuity state (non-intrusive) ---
+    try:
+        if sb and user_id:
+            st_row = (
+                sb.table("reflection_state")
+                    .select(
+                        "last_reflection_at,last_theme,last_mood,last_microstep,"
+                        "last_meaningful_action,last_action_at,reflection_count"
+                    )
+                    .eq("user_id", str(user_id))
+                    .maybe_single()
+                    .execute()
+            )
+            state = getattr(st_row, "data", None) or None
+
+            if state:
+                last_ms = (state.get("last_microstep") or "").strip()
+                last_theme = (state.get("last_theme") or "").strip()
+                last_mood = (state.get("last_mood") or "").strip()
+
+                st.caption(
+                    f"Continuity: {last_theme or '—'} • {last_mood or '—'}"
+                    + (f" • last microstep: “{last_ms}”" if last_ms else "")
+            )
+    except Exception:
+        pass
+
     # --- Load recent micro-steps (last 7 days) ---
     rows = _list_microsteps(sb, user_id=user_id, days=7)
 
@@ -860,6 +896,11 @@ def _load_latest_followup_ai(
         return {}
 
 
+from agi.deepen_ai import get_last_deepen_debug
+
+dbg = get_last_deepen_debug() or {}
+silenced_flag = bool(dbg.get("silenced", False))
+
 # ---------------------------------------------------------------------------
 # UI building blocks
 # ---------------------------------------------------------------------------
@@ -981,52 +1022,130 @@ def render_mentor_followup(
             )
             st.markdown("<div style='margin-top:-0.15rem'></div>", unsafe_allow_html=True)
 
+            subdued_mode = st.checkbox(
+            "I feel subdued — keep it ultra-gentle",
+            key=f"subdued_mode::{scope}",
+            value=False,
+            )
+
+            # --- Defaults so we never hit UnboundLocalError ---
+            stillness, insight, microstep = "", "", ""
+            dbg = {}
+            mood = "soft"
+            silenced_flag = False
+            silence_reason = None
+            presence_stage = None
+
             if st.button("💾 Save & mirror into a tiny step", key=f"save_followup::{scope}"):
                 if not sb or not user_id:
                     st.warning("Not signed in or DB unavailable.")
                 elif not (note or "").strip():
                     st.warning("Please write a short deepen note before saving.")
                 else:
-                    # 1) Save to latest reflection + generate AI result
                     try:
+                        # 1) Save note onto the reflection (or latest)
                         reflection_id = row_id or _save_followup_note_to_latest(
                             sb,
                             user_id,
                             note or "",
                         )
 
+                        # 2) Gather recent followups (for anti-repeat)
                         recent = _fetch_recent_followups(sb, user_id)
-                        insight, microstep = generate_deepen_insight(
-                            theme=selected_theme,
+
+                        # 3) Generate Deepen output (theme_used = selected_theme is our single truth)
+                        theme_used = (selected_theme or "Clarity").strip() or "Clarity"
+
+                        stillness, insight, microstep = generate_deepen_insight(
+                            theme=theme_used,
                             reflection_text=reflection_text,
                             followup_note=note,
                             recent_followups=recent,
                         )
 
+                        # --- Deepen debug: silence gate inspection (single source of truth) ---
+                        dbg = get_last_deepen_debug() or dbg
+                        silenced_flag = bool(dbg.get("silenced", False))
+
+                        mood = (dbg.get("mood") or "soft")
+                        silence_reason = dbg.get("silence_reason")
+                        presence_stage = dbg.get("presence_stage_final") 
+
+                        # Optional UI label
+                        st.caption(
+                            "Mode: "
+                            + ("Silence" if silenced_flag else "Grounded" if dbg.get("subdued") else "Active")
+                        )
+
+                        # Keep for UI (optional)
+                        st.session_state["deepen_stillness"] = stillness or ""
+                        st.session_state["deepen_insight"] = insight or ""
+                        st.session_state["deepen_microstep"] = microstep or ""
+
+                        
+
+                        # --- E1: record microstep memory (best-effort) ---
+                        try:
+                            from agi.memory import record_reflection_memory
+                            mem_rc = record_reflection_memory(
+                                theme=theme_used,
+                                mood=mood,
+                                microstep=microstep or "",
+                                insight=(insight or None),
+                                silenced=bool(dbg.get("silenced", False)),
+                                silence_reason=silence_reason,
+                                presence_stage=presence_stage,
+                            )
+                            
+                            st.session_state["memdbg"] = mem_rc
+                        except Exception as e:
+                            st.session_state["memdbg"] = {
+                                "enabled": True,
+                                "written": False,
+                                "error": str(e)[:160],
+                            }
+
+                        # --- E2: continuity state update (best-effort) ---
+                        try:
+                            from agi.persistence.state import upsert_reflection_state
+                            upsert_reflection_state(
+                                supabase=sb,
+                                user_id=str(st.session_state.get(S_USER_ID)),
+                                theme=theme_used,
+                                mood=mood,
+                                microstep=(microstep or None),
+                                last_meaningful_action="deepen_microstep",
+                            )
+                        except Exception as e:
+                            st.session_state["state_dbg"] = {
+                                "enabled": True,
+                                "written": False,
+                                "error": str(e)[:160],
+                            }
+
+                        # Update cached UI card values
                         st.session_state[res_key] = {
-                            "insight": insight,
-                            "microstep": microstep,
+                            "insight": insight or "",
+                            "microstep": microstep or "",
                         }
 
                     except Exception as e:
                         st.error(f"Couldn’t generate follow-up: {e}")
                     else:
-                        # 2) Save to user_followup_ai
+                        # 4) Save AI result to user_followup_ai
                         ok = _save_followup_ai(
                             sb,
                             user_id=user_id,
                             reflection_id=reflection_id,
-                            theme=selected_theme,
+                            theme=theme_used,
                             note=note or "",
                             insight=insight,
                             microstep=microstep,
                         )
 
                         if ok:
-                            # 3) Only rerun if DB insert succeeded
                             st.session_state[rib_key] = True
                             st.rerun()
-                        # If not ok, _save_followup_ai already showed st.error and we do NOT rerun
 
             # — Ribbon (shows once, then clears) —
             if st.session_state.get(rib_key):

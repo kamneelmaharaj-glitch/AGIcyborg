@@ -1428,7 +1428,7 @@ def generate_deepen_insight(
     silenced = False
     silence_reason = None
     dbg = {}
-    
+
     theme_label = (theme or "Reflection").strip() or "Reflection"
     recent_followups = list(recent_followups or [])
 
@@ -1973,21 +1973,25 @@ def generate_deepen_insight(
     )
     
     print("🧠 E1 memory write reached")
+    presence_stage = dbg.get("presence_stage_final")
     # --- E1 memory write (record-only, non-intrusive) ---
+    mem_rc = {"enabled": True, "written": False, "error": None}  # default
+
     try:
         from agi.memory import record_reflection_memory
         mem_rc = record_reflection_memory(
-            theme=theme_label,
+            theme=theme,
             mood=mood,
-            microstep=microstep,
-            insight=insight if insight else None,
-            silenced=bool(_last_debug.get("silenced", False)),
-            silence_reason=_last_debug.get("silence_reason"),
-            presence_stage=_last_debug.get("presence_stage_final"),
-    )
-        _last_debug["memory"] = mem_rc
+            microstep=microstep or "",
+            insight=(insight or None),
+            silenced=bool(silenced),
+            silence_reason=silence_reason,
+            presence_stage=dbg.get("presence_stage_final"),
+        )
     except Exception as e:
-        _last_debug["memory"] = {"enabled": True, "written": False, "error": str(e)[:160]}
+        mem_rc = {"enabled": True, "written": False, "error": str(e)[:160]}
+
+    _last_debug["memdbg"] = mem_rc
 
 
 

@@ -1082,28 +1082,6 @@ def render_mentor_followup(
                         st.session_state["deepen_insight"] = insight or ""
                         st.session_state["deepen_microstep"] = microstep or ""
 
-                        
-
-                        # --- E1: record microstep memory (best-effort) ---
-                        try:
-                            from agi.memory import record_reflection_memory
-                            mem_rc = record_reflection_memory(
-                                theme=theme_used,
-                                mood=mood,
-                                microstep=microstep or "",
-                                insight=(insight or None),
-                                silenced=bool(dbg.get("silenced", False)),
-                                silence_reason=silence_reason,
-                                presence_stage=presence_stage,
-                            )
-                            
-                            st.session_state["memdbg"] = mem_rc
-                        except Exception as e:
-                            st.session_state["memdbg"] = {
-                                "enabled": True,
-                                "written": False,
-                                "error": str(e)[:160],
-                            }
 
                         # --- E2: continuity state update (best-effort) ---
                         try:

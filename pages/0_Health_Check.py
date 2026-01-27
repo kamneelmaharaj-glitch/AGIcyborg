@@ -442,7 +442,12 @@ col1, col2, col3, col4 = st.columns([1,1,1,1])
 
 with col1:
     st.subheader("Supabase URL")
-    st.metric(label="", value="✅" if ok_supabase else "⚠️", help="Connection status")
+    st.metric(
+        label="Supabase",
+        value="✅" if ok_supabase else "⚠️",
+        help="Connection status",
+        label_visibility="collapsed",
+    )
     st.code(mask(SUPABASE_URL), language="text")
 
 with col2:

@@ -1991,10 +1991,7 @@ def generate_deepen_insight(
     except Exception as e:
         mem_rc = {"enabled": True, "written": False, "error": str(e)[:160]}
 
+    print("MEMDBG:", mem_rc)
     _last_debug["memdbg"] = mem_rc
-
-
-
-    print("MEMDBG:", _last_debug.get("memory"))
 
     return stillness, insight, microstep

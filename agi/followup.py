@@ -905,7 +905,10 @@ silenced_flag = bool(dbg.get("silenced", False))
 # UI building blocks
 # ---------------------------------------------------------------------------
 
-def _render_ai_card(theme: str, insight: str, microstep: str) -> None:
+def _render_ai_card(theme: str, insight: str, microstep: str, dbg: Optional[dict] = None) -> None:
+    dbg = dbg or {}
+    is_silence_flag = bool(dbg.get("silenced", False))
+
     theme_safe = (theme or "Reflection").strip() or "Reflection"
 
     st.markdown(
@@ -928,6 +931,12 @@ def _render_ai_card(theme: str, insight: str, microstep: str) -> None:
 # ---------------------------------------------------------------------------
 # Public API — Deepen main panel
 # ---------------------------------------------------------------------------
+
+from agi.deepen_ai import get_last_deepen_debug
+
+dbg = get_last_deepen_debug() or {}
+is_silence_flag = bool(dbg.get("silenced", False))
+silence_reason = dbg.get("silence_reason")
 
 def render_mentor_followup(
     theme: str,
@@ -1036,6 +1045,12 @@ def render_mentor_followup(
             silence_reason = None
             presence_stage = None
 
+            if silenced_flag:
+                st.markdown(
+                    '<div class="fu-ribbon">🪷 Silence held. Stillness is enough today.</div>',
+                    unsafe_allow_html=True,
+                )
+
             if st.button("💾 Save & mirror into a tiny step", key=f"save_followup::{scope}"):
                 if not sb or not user_id:
                     st.warning("Not signed in or DB unavailable.")
@@ -1086,6 +1101,11 @@ def render_mentor_followup(
                         # --- E2: continuity state update (best-effort) ---
                         try:
                             from agi.persistence.state import upsert_reflection_state
+                            
+                            dbg = get_last_deepen_debug() or {}
+                            is_silence_flag = bool(dbg.get("silenced", False))
+                            silence_reason = dbg.get("silence_reason")
+
                             upsert_reflection_state(
                                 supabase=sb,
                                 user_id=str(st.session_state.get(S_USER_ID)),
@@ -1093,6 +1113,8 @@ def render_mentor_followup(
                                 mood=mood,
                                 microstep=(microstep or None),
                                 last_meaningful_action="deepen_microstep",
+                                silenced=is_silence_flag,
+                                silence_reason=silence_reason,
                             )
                         except Exception as e:
                             st.session_state["state_dbg"] = {

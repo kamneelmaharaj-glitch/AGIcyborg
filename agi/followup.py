@@ -908,6 +908,8 @@ silenced_flag = bool(dbg.get("silenced", False))
 def _render_ai_card(theme: str, insight: str, microstep: str, dbg: Optional[dict] = None) -> None:
     dbg = dbg or {}
     is_silence_flag = bool(dbg.get("silenced", False))
+    silence_insight = "No words needed. Let the body settle."
+    silence_microstep = "Sit upright for ten seconds. Feel one point of contact."
 
     theme_safe = (theme or "Reflection").strip() or "Reflection"
 
@@ -918,10 +920,16 @@ def _render_ai_card(theme: str, insight: str, microstep: str, dbg: Optional[dict
   <div class="deepen-ai-card-theme">{theme_safe}</div>
 
   <div class="deepen-ai-card-section-label">INSIGHT</div>
-  <p>{(insight or "Once you save a deepen note for this reflection, your distilled insight will appear here.")}</p>
+  <p>{
+    silence_insight if is_silence_flag
+    else (insight or "Once you save a deepen note for this reflection, your distilled insight will appear here.")
+    }</p>
 
   <div class="deepen-ai-card-section-label">MICRO-STEP</div>
-  <p>{(microstep or "A tiny 2-minute action will be suggested here, based on today’s note.")}</p>
+  <p>{
+    silence_microstep if is_silence_flag
+    else (microstep or "A tiny 2-minute action will be suggested here, based on today’s note.")
+    }</p>
 </div>
 """,
         unsafe_allow_html=True,

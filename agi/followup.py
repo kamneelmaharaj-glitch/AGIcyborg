@@ -292,6 +292,16 @@ def _ensure_fu_css() -> None:
   margin:0 .35rem;
 }
 
+.silence-pill {
+  margin-left: 8px;
+  padding: 2px 8px;
+  font-size: 0.72rem;
+  border-radius: 999px;
+  background: rgba(180, 220, 255, 0.12);
+  border: 1px solid rgba(180, 220, 255, 0.25);
+  color: rgba(220, 235, 255, 0.9);
+}
+
 /* History rows reuse existing styling but stay minimal */
 </style>
         """,
@@ -905,37 +915,68 @@ silenced_flag = bool(dbg.get("silenced", False))
 # UI building blocks
 # ---------------------------------------------------------------------------
 
-def _render_ai_card(theme: str, insight: str, microstep: str, dbg: Optional[dict] = None) -> None:
+def _render_ai_card(
+    theme: str,
+    insight: str,
+    microstep: str,
+    dbg: Optional[dict] = None,
+) -> None:
     dbg = dbg or {}
     is_silence_flag = bool(dbg.get("silenced", False))
+
+    # Silence-specific copy
     silence_insight = "No words needed. Let the body settle."
     silence_microstep = "Sit upright for ten seconds. Feel one point of contact."
 
+    # Badge (must be defined BEFORE st.markdown f-string)
+    silence_badge = (
+        '<span class="silence-pill">Silence</span>'
+        if is_silence_flag else ""
+    )
+
     theme_safe = (theme or "Reflection").strip() or "Reflection"
+
+    # Resolve display text intentionally
+    display_insight = (
+        silence_insight
+        if is_silence_flag
+        else (
+            (insight or "").strip()
+            or "Once you save a deepen note for this reflection, your distilled insight will appear here."
+        )
+    )
+
+    display_microstep = (
+        silence_microstep
+        if is_silence_flag
+        else (
+            (microstep or "").strip()
+            or "A tiny 2-minute action will be suggested here, based on today’s note."
+        )
+    )
+
+    # Section label shifts tone on silence days
+    insight_label = "STILLNESS" if is_silence_flag else "INSIGHT"
 
     st.markdown(
         f"""
 <div class="deepen-ai-card theme-{theme_safe}">
-  <div class="deepen-ai-card-header">DEEPEN MENTOR</div>
+  <div class="deepen-ai-card-header">
+    DEEPEN MENTOR
+    {silence_badge}
+  </div>
+
   <div class="deepen-ai-card-theme">{theme_safe}</div>
 
-  <div class="deepen-ai-card-section-label">INSIGHT</div>
-  <p>{
-    silence_insight if is_silence_flag
-    else (insight or "Once you save a deepen note for this reflection, your distilled insight will appear here.")
-    }</p>
+  <div class="deepen-ai-card-section-label">{insight_label}</div>
+  <p>{display_insight}</p>
 
   <div class="deepen-ai-card-section-label">MICRO-STEP</div>
-  <p>{
-    silence_microstep if is_silence_flag
-    else (microstep or "A tiny 2-minute action will be suggested here, based on today’s note.")
-    }</p>
+  <p>{display_microstep}</p>
 </div>
 """,
         unsafe_allow_html=True,
     )
-
-
 # ---------------------------------------------------------------------------
 # Public API — Deepen main panel
 # ---------------------------------------------------------------------------
@@ -1055,11 +1096,11 @@ def render_mentor_followup(
 
             if silenced_flag:
                 st.markdown(
-                    '<div class="fu-ribbon">🪷 Silence held. Stillness is enough today.</div>',
+                    '<div class="fu-ribbon">🌿 Silence is holding today. No response is required.</div>',
                     unsafe_allow_html=True,
                 )
 
-            if st.button("💾 Save & mirror into a tiny step", key=f"save_followup::{scope}"):
+            if st.button("💾 Save stillness", key=f"save_followup::{scope}"):
                 if not sb or not user_id:
                     st.warning("Not signed in or DB unavailable.")
                 elif not (note or "").strip():

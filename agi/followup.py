@@ -302,6 +302,13 @@ def _ensure_fu_css() -> None:
   color: rgba(220, 235, 255, 0.9);
 }
 
+.silence-subcaption {
+  margin-top: 6px;
+  font-size: 0.82rem;
+  opacity: 0.75;
+  letter-spacing: 0.02em;
+}
+
 /* History rows reuse existing styling but stay minimal */
 </style>
         """,
@@ -697,7 +704,12 @@ def render_microstep_widget(sb, user_id: str) -> None:
             st.caption(f"{theme} • Last follow-up: {created_at}")
             st.write(f"**Tiny action:** {micro_text}")
 
-            why_line = _why_it_matters_line(theme, micro_text)
+            # Silence-aware why-it-matters line
+            if latest and latest.get("silenced"):
+                why_line = "No pushing today. This is simply a gentle return."
+            else:
+                why_line = _why_it_matters_line(theme, micro_text)
+                
             st.markdown(f"🪷 *{why_line}*")
 
             # Streak line
@@ -926,12 +938,17 @@ def _render_ai_card(
 
     # Silence-specific copy
     silence_insight = "No words needed. Let the body settle."
-    silence_microstep = "Sit upright for ten seconds. Feel one point of contact."
+    silence_microstep = "Sit upright for ten seconds. Feel one point of contact. Exhale once."
 
     # Badge (must be defined BEFORE st.markdown f-string)
     silence_badge = (
         '<span class="silence-pill">Silence</span>'
         if is_silence_flag else ""
+    )
+
+    silence_subcaption = (
+    '<div class="silence-subcaption">Stillness is active.</div>'
+    if is_silence_flag else ""
     )
 
     theme_safe = (theme or "Reflection").strip() or "Reflection"
@@ -958,15 +975,22 @@ def _render_ai_card(
     # Section label shifts tone on silence days
     insight_label = "STILLNESS" if is_silence_flag else "INSIGHT"
 
+    
+    theme_block = (
+    f'<div class="deepen-ai-card-theme">{theme_safe}</div>'
+    if not is_silence_flag else ""
+    )
+
     st.markdown(
-        f"""
+    f"""
 <div class="deepen-ai-card theme-{theme_safe}">
   <div class="deepen-ai-card-header">
     DEEPEN MENTOR
     {silence_badge}
   </div>
+  {silence_subcaption}
 
-  <div class="deepen-ai-card-theme">{theme_safe}</div>
+  {theme_block}
 
   <div class="deepen-ai-card-section-label">{insight_label}</div>
   <p>{display_insight}</p>
@@ -975,8 +999,8 @@ def _render_ai_card(
   <p>{display_microstep}</p>
 </div>
 """,
-        unsafe_allow_html=True,
-    )
+    unsafe_allow_html=True,
+)
 # ---------------------------------------------------------------------------
 # Public API — Deepen main panel
 # ---------------------------------------------------------------------------

@@ -12,6 +12,7 @@ from agi.auth import S_USER_ID
 from agi.orb import render_breath_orb
 from agi.presence import PRESENCE_TOGGLE_KEY, render_presence_widget
 from agi.config import PRESENCE_CYCLE_SEC
+from agi.deepen_ai import get_last_deepen_debug as _get_last_deepen_debug
 
 # ----------------------------
 # Theme resolution (follow-up)
@@ -709,7 +710,7 @@ def render_microstep_widget(sb, user_id: str) -> None:
                 why_line = "No pushing today. This is simply a gentle return."
             else:
                 why_line = _why_it_matters_line(theme, micro_text)
-                
+
             st.markdown(f"🪷 *{why_line}*")
 
             # Streak line
@@ -918,9 +919,9 @@ def _load_latest_followup_ai(
         return {}
 
 
-from agi.deepen_ai import get_last_deepen_debug
 
-dbg = get_last_deepen_debug() or {}
+
+dbg = _get_last_deepen_debug() or {}
 silenced_flag = bool(dbg.get("silenced", False))
 
 # ---------------------------------------------------------------------------
@@ -938,7 +939,7 @@ def _render_ai_card(
 
     # Silence-specific copy
     silence_insight = "No words needed. Let the body settle."
-    silence_microstep = "Sit upright for ten seconds. Feel one point of contact. Exhale once."
+    silence_microstep = "Sit upright for ten seconds. Feel one point of contact. Let one exhale pass."
 
     # Badge (must be defined BEFORE st.markdown f-string)
     silence_badge = (
@@ -1005,9 +1006,7 @@ def _render_ai_card(
 # Public API — Deepen main panel
 # ---------------------------------------------------------------------------
 
-from agi.deepen_ai import get_last_deepen_debug
-
-dbg = get_last_deepen_debug() or {}
+dbg = _get_last_deepen_debug() or {}
 is_silence_flag = bool(dbg.get("silenced", False))
 silence_reason = dbg.get("silence_reason")
 
@@ -1152,7 +1151,7 @@ def render_mentor_followup(
                         )
 
                         # --- Deepen debug: silence gate inspection (single source of truth) ---
-                        dbg = get_last_deepen_debug() or dbg
+                        dbg = _get_last_deepen_debug() or {}
                         silenced_flag = bool(dbg.get("silenced", False))
 
                         mood = (dbg.get("mood") or "soft")
@@ -1175,7 +1174,7 @@ def render_mentor_followup(
                         try:
                             from agi.persistence.state import upsert_reflection_state
                             
-                            dbg = get_last_deepen_debug() or {}
+                            dbg = _get_last_deepen_debug() or {}
                             is_silence_flag = bool(dbg.get("silenced", False))
                             silence_reason = dbg.get("silence_reason")
 
@@ -1229,13 +1228,25 @@ def render_mentor_followup(
                 st.session_state.pop(rib_key, None)
 
         # ----- Right column: current AI card (unified pattern) -----
-        with right:
-            stored = st.session_state.get(res_key, {})
-            _render_ai_card(
-                selected_theme,
-                stored.get("insight", ""),
-                stored.get("microstep", ""),
-            )
+
+    with right:
+        stored = st.session_state.get(res_key, {})
+
+        # single source of truth: always pull latest debug right before render
+        dbg = _get_last_deepen_debug() or {}
+
+        # TEMP: keep this caption until you confirm UX is correct
+        st.caption(
+            f"DBG: silenced={bool(dbg.get('silenced', False))} "
+            f"reason={dbg.get('silence_reason')}"
+        )
+
+        _render_ai_card(
+            selected_theme,
+            stored.get("insight", ""),
+            stored.get("microstep", ""),
+            dbg=dbg,  # <-- critical
+        )
 
         # ----- Analytics strip (theme-aware) -----
         if sb and user_id:

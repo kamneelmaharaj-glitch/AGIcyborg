@@ -93,6 +93,11 @@ def _is_externalized_authority(text: str) -> bool:
         return True
     return False
 
+# SILENCE CONTRACT (v1)
+# Silence is a valid completion state.
+# It is not an error, fallback, or absence.
+# No AI output is required when silence is active.
+
 def should_silence(
     *,
     reflection_text: str,

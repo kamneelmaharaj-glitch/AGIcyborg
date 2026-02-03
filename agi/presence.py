@@ -11,8 +11,101 @@ from .config import PRESENCE_CYCLE_SEC
 from .db import insert_presence_session
 from .auth import S_USER_ID
 
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from typing import Optional, Dict, Any
+
 # Single global key that other panels (e.g. Today panel) can read
 PRESENCE_TOGGLE_KEY = "presence_toggle_global"
+
+# ---------------------------------------------------------------------------
+# Presence carry-over v1 (LOCKED)
+# ---------------------------------------------------------------------------
+
+@dataclass
+class PresenceCarryover:
+    freshness: str  # "fresh" | "soft" | "dormant"
+    tone: str       # "normal" | "gentle"
+    stage_carry: Optional[int]
+    reason: str
+
+
+def _parse_iso(ts: Optional[str]) -> Optional[datetime]:
+    if not ts:
+        return None
+    try:
+        dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc)
+    except Exception:
+        return None
+
+
+def infer_presence_carryover(
+    state_row: Optional[Dict[str, Any]],
+    *,
+    now: Optional[datetime] = None,
+) -> PresenceCarryover:
+    """
+    Presence carry-over v1 (SEALED):
+    - Stage NEVER advances automatically.
+    - Stage NEVER decays as punishment.
+    - Stage changes ONLY on active reflection (handled elsewhere).
+    - Carry-over only influences freshness/tone of entry.
+
+    Reads from E2 reflection_state row (single source of truth).
+    Expected keys (best-effort):
+      - last_reflection_at (iso str)
+      - last_silenced (bool)
+      - last_presence_stage (int-like)
+    """
+    now = now or datetime.now(timezone.utc)
+
+    if not state_row:
+        return PresenceCarryover(
+            freshness="dormant",
+            tone="gentle",
+            stage_carry=None,
+            reason="no_state_row",
+        )
+
+    last_reflection_at = _parse_iso(state_row.get("last_reflection_at"))
+    last_silenced = bool(state_row.get("last_silenced", False))
+    last_stage = state_row.get("last_presence_stage")
+
+    stage_carry: Optional[int] = None
+    try:
+        if last_stage is not None and str(last_stage).strip().isdigit():
+            stage_carry = int(str(last_stage).strip())
+    except Exception:
+        stage_carry = None
+
+    # If timestamp missing/unparseable: be conservative + gentle
+    if not last_reflection_at:
+        return PresenceCarryover(
+            freshness="soft",
+            tone="gentle",
+            stage_carry=stage_carry,
+            reason="missing_last_reflection_at",
+        )
+
+    days = (now - last_reflection_at).total_seconds() / 86400.0
+
+    # Silence is a pause: never punish with decay; always gentle entry.
+    if last_silenced:
+        if days <= 1.2:
+            return PresenceCarryover("fresh", "gentle", stage_carry, "silenced_recent")
+        if days <= 4.5:
+            return PresenceCarryover("soft", "gentle", stage_carry, "silenced_short_gap")
+        return PresenceCarryover("dormant", "gentle", stage_carry, "silenced_long_gap")
+
+    # Non-silence carry-over
+    if days <= 1.2:
+        return PresenceCarryover("fresh", "normal", stage_carry, "recent")
+    if days <= 4.5:
+        return PresenceCarryover("soft", "gentle", stage_carry, "short_gap")
+    return PresenceCarryover("dormant", "gentle", stage_carry, "long_gap")
 
 
 def render_presence_widget(phase: str | None = None, hint: str | None = None) -> None:

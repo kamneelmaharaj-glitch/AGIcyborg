@@ -62,6 +62,10 @@ def infer_presence_carryover(
     """
     now = now or datetime.now(timezone.utc)
 
+    # Thresholds (sealed)
+    FRESH_DAYS = 1.2
+    SOFT_DAYS = 4.5
+
     if not state_row:
         return PresenceCarryover(
             freshness="dormant",
@@ -74,10 +78,16 @@ def infer_presence_carryover(
     last_silenced = bool(state_row.get("last_silenced", False))
     last_stage = state_row.get("last_presence_stage")
 
+    # Stage carry (best-effort, never computed/advanced here)
     stage_carry: Optional[int] = None
     try:
-        if last_stage is not None and str(last_stage).strip().isdigit():
-            stage_carry = int(str(last_stage).strip())
+        if last_stage is None:
+            stage_carry = None
+        elif isinstance(last_stage, int):
+            stage_carry = last_stage
+        else:
+            s = str(last_stage).strip()
+            stage_carry = int(s) if s.isdigit() else None
     except Exception:
         stage_carry = None
 
@@ -91,22 +101,23 @@ def infer_presence_carryover(
         )
 
     days = (now - last_reflection_at).total_seconds() / 86400.0
+    if days < 0:
+        days = 0.0
 
     # Silence is a pause: never punish with decay; always gentle entry.
     if last_silenced:
-        if days <= 1.2:
+        if days <= FRESH_DAYS:
             return PresenceCarryover("fresh", "gentle", stage_carry, "silenced_recent")
-        if days <= 4.5:
+        if days <= SOFT_DAYS:
             return PresenceCarryover("soft", "gentle", stage_carry, "silenced_short_gap")
         return PresenceCarryover("dormant", "gentle", stage_carry, "silenced_long_gap")
 
     # Non-silence carry-over
-    if days <= 1.2:
+    if days <= FRESH_DAYS:
         return PresenceCarryover("fresh", "normal", stage_carry, "recent")
-    if days <= 4.5:
+    if days <= SOFT_DAYS:
         return PresenceCarryover("soft", "gentle", stage_carry, "short_gap")
     return PresenceCarryover("dormant", "gentle", stage_carry, "long_gap")
-
 
 def render_presence_widget(phase: str | None = None, hint: str | None = None) -> None:
     """Simple static presence widget used when Presence mode is off."""

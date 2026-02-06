@@ -663,6 +663,28 @@ def render_microstep_widget(sb, user_id: str) -> None:
             )
     except Exception:
         pass
+    
+    from agi.presence import infer_presence_carryover
+
+    try:
+        carry = infer_presence_carryover(state)
+    except Exception:
+        carry = None
+
+    st.session_state["presence_carry"] = {
+        "freshness": carry.freshness if carry else "dormant",
+        "tone": carry.tone if carry else "gentle",
+        "stage_carry": carry.stage_carry if carry else None,
+        "reason": carry.reason if carry else "carry_error",
+    }
+
+    # --- DEBUG (V1) ---
+    st.caption(
+        f"Presence carry-over: "
+        f"{st.session_state['presence_carry']['freshness']} · "
+        f"tone={st.session_state['presence_carry']['tone']} · "
+        f"reason={st.session_state['presence_carry']['reason']}"
+    )   
 
     # --- Load recent micro-steps (last 7 days) ---
     rows = _list_microsteps(sb, user_id=user_id, days=7)
@@ -954,24 +976,32 @@ def _render_ai_card(
 
     theme_safe = (theme or "Reflection").strip() or "Reflection"
 
-    # Resolve display text intentionally
-    display_insight = (
-        silence_insight
-        if is_silence_flag
-        else (
-            (insight or "").strip()
+    dbg = dbg or {}
+
+    is_silenced = bool(dbg.get("silenced", False))
+    presence_freshness = dbg.get("presence_freshness")  # inferred upstream
+    is_dormant = presence_freshness == "dormant"
+
+    EMPTY_STATE_COPY = "Nothing to add right now. You can stay here."
+
+    insight_clean = (insight or "").strip()
+    microstep_clean = (microstep or "").strip()
+
+    # Presence-aware empty state (Silence OR Dormant) + no content
+    if (is_silenced or is_dormant) and (not insight_clean) and (not microstep_clean):
+        display_insight = EMPTY_STATE_COPY
+        display_microstep = ""
+    else:
+    # Silence mode still overrides when active (first-class)
+        display_insight = silence_insight if is_silence_flag else (
+            insight_clean
             or "Once you save a deepen note for this reflection, your distilled insight will appear here."
         )
-    )
 
-    display_microstep = (
-        silence_microstep
-        if is_silence_flag
-        else (
-            (microstep or "").strip()
+        display_microstep = silence_microstep if is_silence_flag else (
+            microstep_clean
             or "A tiny 2-minute action will be suggested here, based on today’s note."
         )
-    )
 
     # Section label shifts tone on silence days
     insight_label = "STILLNESS" if is_silence_flag else "INSIGHT"

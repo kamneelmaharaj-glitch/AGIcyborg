@@ -29,6 +29,8 @@ class PresenceCarryover:
     stage_carry: Optional[int]
     reason: str
 
+def tone_copy(*, normal: str, gentle: str, tone: str) -> str:
+    return gentle if tone == "gentle" else normal
 
 def _parse_iso(ts: Optional[str]) -> Optional[datetime]:
     if not ts:
@@ -119,8 +121,20 @@ def infer_presence_carryover(
         return PresenceCarryover("soft", "gentle", stage_carry, "short_gap")
     return PresenceCarryover("dormant", "gentle", stage_carry, "long_gap")
 
+st.session_state["presence_carry"] = {"tone": "gentle"}
+
 def render_presence_widget(phase: str | None = None, hint: str | None = None) -> None:
-    """Simple static presence widget used when Presence mode is off."""
+    tone = (
+        st.session_state.get("presence_carry", {})
+        .get("tone", "normal")
+    )
+
+    helper_text = tone_copy(
+        normal="Breathe 4–2–6 and simply notice three sensations.",
+        gentle="You might breathe 4–2–6 and notice a few sensations, if it feels right.",
+        tone=tone,
+    )
+
     st.markdown(
         """
         <div class="presence-wrap">
@@ -129,9 +143,11 @@ def render_presence_widget(phase: str | None = None, hint: str | None = None) ->
             <span>Return to stillness</span>
             <span class="lotus" style="margin-left:.5rem">🪷</span>
           </div>
+
           <div class="presence-note">
-            Breathe 4–2–6 and simply notice three sensations.
+            {helper_text}
           </div>
+
           <div class="breath-orb"></div>
           <div class="phase">{phase}</div>
           <div class="sense">
@@ -139,11 +155,13 @@ def render_presence_widget(phase: str | None = None, hint: str | None = None) ->
           </div>
         </div>
         """.format(
+            helper_text=helper_text,
             phase=phase or "Inhale… Exhale…",
             hint=hint or "Notice any touch, temperature, or weight.",
         ),
         unsafe_allow_html=True,
     )
+
 
 
 def render_presence_section(selected_theme: str, sb) -> None:
@@ -164,6 +182,8 @@ def render_presence_section(selected_theme: str, sb) -> None:
         st.session_state["presence_was_on"] = False
         st.session_state.pop("presence_start_ts", None)
         st.session_state["presence_autosaved"] = False
+        # FORCE gentle
+        st.session_state["presence_carry"] = {"tone": "gentle"}
         return
 
     # --- Header ---

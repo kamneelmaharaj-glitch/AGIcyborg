@@ -194,14 +194,14 @@ def render_presence_section(selected_theme: str, sb) -> None:
     c1, c2 = st.columns([1, 1])
     with c1:
         st.toggle(
-            "Activate Presence Signal",
+            "Presence signal",
             key=PRESENCE_TOGGLE_KEY,
             value=st.session_state.get(PRESENCE_TOGGLE_KEY, False),
         )
     with c2:
-        st.markdown(
-            "When active, the orb will pulse gently — stay still for one minute."
-        )
+      st.markdown(
+          "When on, the orb will pulse gently — you can simply rest with it."
+      )
 
     # Single source of truth for Presence Mode ON/OFF
     active = bool(st.session_state.get(PRESENCE_TOGGLE_KEY, False))

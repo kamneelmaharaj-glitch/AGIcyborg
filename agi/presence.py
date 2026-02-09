@@ -206,6 +206,18 @@ def render_presence_section(selected_theme: str, sb) -> None:
     # Single source of truth for Presence Mode ON/OFF
     active = bool(st.session_state.get(PRESENCE_TOGGLE_KEY, False))
 
+
+    tone = (
+        st.session_state.get("presence_carry", {})
+        .get("tone", "normal")
+    )
+
+    phase_hint = (
+        "Notice any touch, temperature, or weight."
+        if tone == "normal"
+        else "If anything stands out, you can notice it."
+    )
+
     # ------------------------------------------------------------------
     # Orb + phase / tone UI
     # ------------------------------------------------------------------
@@ -215,6 +227,7 @@ def render_presence_section(selected_theme: str, sb) -> None:
             """
             <div id="presence-orb" class="presence-orb"></div>
             <div id="presence-phase" class="presence-phase">Inhale • 4</div>
+            <div class="sense">{phase_hint}</div>
             """,
             unsafe_allow_html=True,
         )

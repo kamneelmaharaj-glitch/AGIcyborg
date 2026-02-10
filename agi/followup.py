@@ -134,7 +134,7 @@ def render_today_panel(sb, user_id) -> None:
         header_left, header_right = st.columns([3, 1])
         with header_left:
             st.markdown("### 🌅 Today")
-            st.caption("Return to stillness — 4–2–6 and notice three sensations.")
+            st.caption("Return to stillness — breathe 4–2–6, if it feels right.")
         with header_right:
             # This is the *only* widget that writes to PRESENCE_TOGGLE_KEY.
             presence_on = st.toggle(
@@ -158,7 +158,7 @@ def render_today_panel(sb, user_id) -> None:
                   Inhale… Exhale…
                 </div>
                 <div style="text-align:center;opacity:.7;font-size:.9rem;margin-top:.25rem;">
-                  Notice any touch, temperature, or weight.
+                  If you’d like, notice touch, temperature, or weight.
                 </div>
                 """,
                 unsafe_allow_html=True,
@@ -167,7 +167,7 @@ def render_today_panel(sb, user_id) -> None:
             # Static / gentle orb using the legacy widget
             render_presence_widget(
                 phase="Inhale… Exhale…",
-                hint="Notice any touch, temperature, or weight.",
+                hint="If you’d like, notice touch, temperature, or weight.",
             )
 
     # --- Below the Today card: Today’s micro-step ---

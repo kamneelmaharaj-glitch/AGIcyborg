@@ -679,12 +679,17 @@ def render_microstep_widget(sb, user_id: str) -> None:
     }
 
     # --- DEBUG (V1) ---
-    st.caption(
-        f"Presence carry-over: "
-        f"{st.session_state['presence_carry']['freshness']} · "
-        f"tone={st.session_state['presence_carry']['tone']} · "
-        f"reason={st.session_state['presence_carry']['reason']}"
-    )   
+    import os
+
+    if os.getenv("AGI_DEBUG") == "1":
+        carry = st.session_state.get("presence_carry", {})
+        st.caption(
+            f"Presence carry-over: "
+            f"{carry.get('freshness')} · "
+            f"tone={carry.get('tone')} · "
+            f"reason={carry.get('reason')}"
+    )
+       
 
     # --- Load recent micro-steps (last 7 days) ---
     rows = _list_microsteps(sb, user_id=user_id, days=7)

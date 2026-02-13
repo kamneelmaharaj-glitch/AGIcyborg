@@ -13,6 +13,7 @@ from agi.orb import render_breath_orb
 from agi.presence import PRESENCE_TOGGLE_KEY, render_presence_widget
 from agi.config import PRESENCE_CYCLE_SEC
 from agi.deepen_ai import get_last_deepen_debug as _get_last_deepen_debug
+from agi.presence import presence_sensory_copy
 
 # ----------------------------
 # Theme resolution (follow-up)
@@ -122,6 +123,32 @@ from agi.auth import S_USER_ID  # you already import this near the top
 
 PRESENCE_TOGGLE_KEY = "presence_toggle_global"
 
+# ------------------------------------------------------------------
+# Presence carry-over must be resolved BEFORE any UI reads tone/copy.
+# ------------------------------------------------------------------
+from agi.presence import infer_presence_carryover
+
+def _ensure_presence_carry(state_row):
+    if st.session_state.get("presence_carry"):
+        return  # optional: don’t recompute every rerun
+
+    try:
+        carry = infer_presence_carryover(state_row)
+        st.session_state["presence_carry"] = {
+            "freshness": carry.freshness,
+            "tone": carry.tone,
+            "stage_carry": carry.stage_carry,
+            "reason": carry.reason,
+        }
+    except Exception:
+        st.session_state["presence_carry"] = {
+            "freshness": "dormant",
+            "tone": "normal",
+            "stage_carry": None,
+            "reason": "carry_error",
+        }
+
+
 def render_today_panel(sb, user_id) -> None:
     """
     Today panel: single source of truth for Presence toggle + orb,
@@ -129,14 +156,32 @@ def render_today_panel(sb, user_id) -> None:
     """
     box = st.container(border=True)
 
+    # ✅ Define state before calling _ensure_presence_carry
+    state = None
+    try:
+        # Use YOUR real getter here (whatever returns the reflection_state row)
+        st_row = fetch_reflection_state_row(sb, user_id)  # <-- replace this line
+        state = getattr(st_row, "data", None) or None
+    except Exception:
+        state = None
+
+    _ensure_presence_carry(state)
+
+    
     with box:
+        # --- Presence sensory copy (always defined) ---
+        tone = (st.session_state.get("presence_carry", {}) or {}).get("tone", "normal")
+        # tone = "normal"  # TEMP TEST (optional)
+
+        headline, hint = presence_sensory_copy(tone=tone)
+
         # --- Header row ---
         header_left, header_right = st.columns([3, 1])
         with header_left:
             st.markdown("### 🌅 Today")
-            st.caption("Return to stillness — breathe 4–2–6, if it feels right.")
+            st.caption(headline)
+
         with header_right:
-            # This is the *only* widget that writes to PRESENCE_TOGGLE_KEY.
             presence_on = st.toggle(
                 "Presence",
                 key=PRESENCE_TOGGLE_KEY,
@@ -146,7 +191,6 @@ def render_today_panel(sb, user_id) -> None:
 
         # --- Orb block ---
         if presence_on:
-            # Animated orb (uses the same CSS class + timing as Presence Mode)
             st.markdown(
                 f"""
                 <div style="display:flex;justify-content:center;margin-top:.75rem;">
@@ -158,19 +202,17 @@ def render_today_panel(sb, user_id) -> None:
                   Inhale… Exhale…
                 </div>
                 <div style="text-align:center;opacity:.7;font-size:.9rem;margin-top:.25rem;">
-                  If you’d like, notice touch, temperature, or weight.
+                  {hint}
                 </div>
                 """,
                 unsafe_allow_html=True,
             )
         else:
-            # Static / gentle orb using the legacy widget
             render_presence_widget(
                 phase="Inhale… Exhale…",
-                hint="If you’d like, notice touch, temperature, or weight.",
+                hint=hint,
             )
 
-    # --- Below the Today card: Today’s micro-step ---
     render_microstep_widget(sb, user_id)
 
 def _why_it_matters_line(theme: str, microstep: str) -> str:
@@ -664,19 +706,6 @@ def render_microstep_widget(sb, user_id: str) -> None:
     except Exception:
         pass
     
-    from agi.presence import infer_presence_carryover
-
-    try:
-        carry = infer_presence_carryover(state)
-    except Exception:
-        carry = None
-
-    st.session_state["presence_carry"] = {
-        "freshness": carry.freshness if carry else "dormant",
-        "tone": carry.tone if carry else "gentle",
-        "stage_carry": carry.stage_carry if carry else None,
-        "reason": carry.reason if carry else "carry_error",
-    }
 
     # --- DEBUG (V1) ---
     import os

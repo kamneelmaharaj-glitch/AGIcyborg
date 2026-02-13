@@ -32,6 +32,26 @@ class PresenceCarryover:
 def tone_copy(*, normal: str, gentle: str, tone: str) -> str:
     return gentle if tone == "gentle" else normal
 
+def presence_sensory_copy(*, tone: str) -> tuple[str, str]:
+    """
+    Returns (headline_copy, sensory_hint) for Presence surfaces.
+    Central source of truth for Today + Presence panel.
+    """
+
+    headline = tone_copy(
+        normal="Return to stillness — breathe 4–2–6.",
+        gentle="Return to stillness — breathe 4–2–6, if it feels right.",
+        tone=tone,
+    )
+
+    hint = tone_copy(
+        normal="Notice touch, temperature, or weight.",
+        gentle="If it helps, notice touch, temperature, or weight.",
+        tone=tone,
+    )
+
+    return headline, hint
+
 def _parse_iso(ts: Optional[str]) -> Optional[datetime]:
     if not ts:
         return None
@@ -124,14 +144,11 @@ def infer_presence_carryover(
 st.session_state["presence_carry"] = {"tone": "gentle"}
 
 def render_presence_widget(phase: str | None = None, hint: str | None = None) -> None:
-    tone = (
-        st.session_state.get("presence_carry", {})
-        .get("tone", "normal")
-    )
+    tone = (st.session_state.get("presence_carry", {}) or {}).get("tone", "normal")
 
     helper_text = tone_copy(
         normal="Breathe 4–2–6 and simply notice three sensations.",
-        gentle="You might breathe 4–2–6 and notice a few sensations, if it feels right.",
+        gentle="Breathe 4–2–6, if it feels right, and notice a few sensations.",
         tone=tone,
     )
 
@@ -150,9 +167,7 @@ def render_presence_widget(phase: str | None = None, hint: str | None = None) ->
 
           <div class="breath-orb"></div>
           <div class="phase">{phase}</div>
-          <div class="sense">
-            {hint}
-          </div>
+          <div class="sense">{hint}</div>
         </div>
         """.format(
             helper_text=helper_text,

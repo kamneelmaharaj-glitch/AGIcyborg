@@ -167,7 +167,21 @@ def render_today_panel(sb, user_id) -> None:
 
     _ensure_presence_carry(state)
 
-    
+    from agi.presence import presence_stage_label
+
+    carry = st.session_state.get("presence_carry", {}) or {}
+    stage = carry.get("stage_carry")
+    stage_txt = presence_stage_label(stage)
+
+    # tiny, non-intrusive cue
+    if stage_txt:
+        st.caption(f"Presence: {stage_txt}")
+
+    import os
+
+    if os.getenv("AGI_DEBUG") == "1" and stage_txt:
+        st.caption(f"Presence: {stage_txt}")
+
     with box:
         # --- Presence sensory copy (always defined) ---
         tone = (st.session_state.get("presence_carry", {}) or {}).get("tone", "normal")

@@ -52,6 +52,20 @@ def presence_sensory_copy(*, tone: str) -> tuple[str, str]:
 
     return headline, hint
 
+def presence_stage_label(stage: int | None) -> str:
+    """
+    Soft labels (non-gamified). Keep neutral.
+    """
+    if stage is None:
+        return ""
+    return {
+        1: "Arriving",
+        2: "Steady",
+        3: "Deepening",
+        4: "Clear",
+        5: "Still",
+    }.get(int(stage), f"Stage {stage}")
+
 def _parse_iso(ts: Optional[str]) -> Optional[datetime]:
     if not ts:
         return None
@@ -204,6 +218,11 @@ def render_presence_section(selected_theme: str, sb) -> None:
     # --- Header ---
     st.markdown("### 🌿 Presence Mode")
     st.caption("Breathe 4–2–6 · Notice · Soften · Receive")
+
+    carry = st.session_state.get("presence_carry", {}) or {}
+    stage_txt = presence_stage_label(carry.get("stage_carry"))
+    if stage_txt:
+      st.caption(f"Presence: {stage_txt}")
 
     # --- Toggle row ---
     c1, c2 = st.columns([1, 1])

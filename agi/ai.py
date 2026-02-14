@@ -97,6 +97,9 @@ def _is_5xx_error(e: Exception) -> bool:
     msg = str(e)
     return any(code in msg for code in ("Error code: 500", "Error code: 502", "Error code: 503", "Error code: 504"))
 
+def _is_insufficient_quota(e: Exception) -> bool:
+    msg = str(e).lower()
+    return ("insufficient_quota" in msg) or ("exceeded your current quota" in msg)
 
 # ---------------------------------------------------------------------------
 # Standard AI generator (insight + mantra) — unchanged behavior
@@ -255,6 +258,7 @@ def ai_generate_deepen(theme: str, prompt: str) -> Tuple[str, str]:
 
             is_429 = _is_rate_limited_error(e)
             is_5xx = _is_5xx_error(e)
+            is_quota = _is_insufficient_quota(e)
 
             # 429 => set circuit breaker
             if is_429:
@@ -262,8 +266,13 @@ def ai_generate_deepen(theme: str, prompt: str) -> Tuple[str, str]:
                 _set_deepen_cooldown(retry_after if retry_after is not None else default_429_cooldown)
 
             # retry only on 429 + 5xx
-            should_retry = is_429 or is_5xx
+            # Do NOT retry quota problems (they won't resolve with backoff)
+            should_retry = (is_429 or is_5xx) and (not is_quota)
+
             if (not should_retry) or (attempt >= max_retries):
+            # Surface a clear marker for callers
+                if is_quota:
+                    raise RuntimeError("AI_UNAVAILABLE:insufficient_quota") from e
                 raise
 
             # backoff (attempt starts at 1 for helper)

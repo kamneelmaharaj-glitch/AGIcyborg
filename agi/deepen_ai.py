@@ -20,7 +20,7 @@ from __future__ import annotations
 import hashlib
 from typing import List, Tuple, Optional, Dict, Any
 
-from agi.ai import ai_generate_deepen
+
 from agi.mood import detect_mood
 
 import os
@@ -1399,8 +1399,6 @@ def _silence_output(*, mood: str) -> tuple[str, None, str]:
 # -------------------------------------------------------------------
 # Public API
 # -------------------------------------------------------------------
-print("ENTERED generate_deepen_insight")
-
 
 def generate_deepen_insight(
     theme: str,
@@ -1492,6 +1490,12 @@ def generate_deepen_insight(
         dbg=dbg,
         subdued_mode=subdued_mode,
     )
+    
+    # --- defaults so we never hit UnboundLocalError ---
+    raw_insight = ""
+    raw_second = ""
+    model_error = ""
+    model_rate_limited = False
 
     _last_debug["silenced"] = bool(silenced)
     _last_debug["silence_reason"] = silence_reason
@@ -1537,6 +1541,7 @@ def generate_deepen_insight(
 
     if silenced:
         _dp(f"silenced:{silence_reason}")
+        
 
         # IMPORTANT: silence path must still return 3 values
         stillness = _silence_stillness_for(mood)   # you already have/should have this helper
@@ -1591,33 +1596,71 @@ def generate_deepen_insight(
     prompt = _compose_prompt(theme_label, reflection_text, followup_note, recent_followups)
 
     # -------------------------
-    # 2) Model call (safe)
+    # 2) Safe model call (import-safe, circular-safe)
     # -------------------------
-    def _is_deepen_test_mode() -> bool:
-        return os.getenv("DEEPEN_TEST_MODE") == "1" or os.getenv("DEEPEN_NO_AI") == "1"
-
-    test_mode = _is_deepen_test_mode()
 
     raw_insight = ""
     raw_second = ""
     model_error = ""
     model_rate_limited = False
 
+    def _is_deepen_test_mode() -> bool:
+        import os
+        return os.getenv("DEEPEN_TEST_MODE") == "1" or os.getenv("DEEPEN_NO_AI") == "1"
+
+    test_mode = _is_deepen_test_mode()
+
     if test_mode:
-        raw_insight, raw_second, model_error = "", "", ""
         _dp("model=skipped:test_mode")
     else:
         try:
+            # Lazy import prevents circular import at module load
+            from agi.ai import ai_generate_deepen
+
             raw_insight, raw_second = ai_generate_deepen(theme_label, prompt)
-            model_error = ""
-            model_rate_limited = False
             _dp("model=ok")
+
         except Exception as e:
-            raw_insight, raw_second = "", ""
             model_error = str(e)
             model_rate_limited = _is_rate_limited(model_error)
-            dbg["model_fallback_reason"] = "rate_limited" if model_rate_limited else "model_error"
-            _dp("model=rate_limited" if model_rate_limited else "model=error")
+
+            dbg["model_fallback_reason"] = (
+                "rate_limited" if model_rate_limited else "model_error"
+            )
+            dbg["ai_error"] = model_error[:160]
+
+            # Do NOT re-raise — silence logic handles downstream behavior
+            raw_insight = ""
+            aw_second = ""
+
+            _dp("model=error_handled")
+
+    # If AI failed, force silence contract (Option A/your chosen behavior)
+    if dbg.get("model_fallback_reason") in ("rate_limited", "model_error"):
+        silenced = True
+        silence_reason = "ai_unavailable"
+        dbg["silenced"] = True
+        dbg["silence_reason"] = silence_reason
+        dbg["silence_rule"] = "ai_unavailable"
+        _dp("model=ai_unavailable_to_silence")
+
+        stillness = _silence_stillness_for(mood)
+        insight = None
+        microstep = ""
+
+        _last_debug.clear()
+        _last_debug.update({
+            "theme": theme_label,
+            "mood": mood,
+            "silenced": True,
+            "silence_reason": silence_reason,
+            "silence_rule": "ai_unavailable",
+            "stillness": stillness,
+            "final_insight": insight,
+            "final_microstep": microstep,
+            "decision_path": " > ".join(decision_path),
+        })
+        return stillness, insight, microstep
 
     # -------------------------
     # 3) Prefix strip + microstep reduction
@@ -1931,9 +1974,9 @@ def generate_deepen_insight(
         "theme_signature_hits": theme_sig_hits,
         "theme_signature_decay": theme_signature_decay,
 
-        "silenced": False,
-        "silence_reason": None,
-        "silence_rule": None,
+        "silenced": bool(silenced),
+        "silence_reason": silence_reason,
+        "silence_rule": dbg.get("silence_rule"),
 
         # Presence debug (D-2b)
         "presence_stage_prev": presence_stage_prev,

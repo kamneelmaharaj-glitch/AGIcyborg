@@ -1407,21 +1407,23 @@ def generate_deepen_insight(
     recent_followups: Optional[List[str]] = None,
 ) -> Tuple[str, Optional[str], str]:
     """
-    Final pipeline:
-        0) Mood detect
-        1) C5 Silence gate (MUST be before any AI/model work)
-        2) Safe model call
-        3) Prefix strip
+    Final pipeline (SEALED):
+        0) Mood detect (single path)
+        1) C5 Silence gate (MUST be before any AI/model work) + early return on silence
+        1b) Presence inference snapshot (runs even on silence; debug + memory)
+        2) Safe model call (lazy import, circular-safe)
+        2b) AI unavailable → force silence contract + return
+        3) Prefix strip + microstep reduction
         4) Theme fallback if empty
         5) Tone align (non-blanking)
-        6) Theme shaping (A.3)
-        7) Category selection + mood bias (A.8.1 + C)
+        6) Theme shaping
+        7) Category selection + mood bias
         8) Category enforcement (deterministic fallback + rotation)
         9) Guardrails (verb-first, no mantra, no multi-step)
-       10) Hard-safe fallback if guardrails fail
+       10) Hard-safe fallback
        11) Anti-repeat (FINAL pass, deterministic)
        12) Final polish
-       13) Debug capture (A.4 + C5)
+       13) Debug capture (pure snapshot) + memory write
     """
     silenced = False
     silence_reason = None
@@ -1513,7 +1515,7 @@ def generate_deepen_insight(
     dbg["subdued"] = mood in ("drained", "soft")
 
     # -------------------------
-    # Presence thread (D-2b) — DEBUG ONLY (no persistence yet)
+    # 1b) Presence inference snapshot (runs even on silence; debug + memory)
     # -------------------------
     presence_stage_prev = 2   # safe default for now
     presence_drift_prev = 0   # safe default for now
@@ -1541,13 +1543,12 @@ def generate_deepen_insight(
 
     if silenced:
         _dp(f"silenced:{silence_reason}")
-        
 
         # IMPORTANT: silence path must still return 3 values
-        stillness = _silence_stillness_for(mood)   # you already have/should have this helper
+        stillness = _silence_stillness_for(mood)
         insight = None
         microstep = ""  # keep string for UI safety (no unpack issues)
-    
+
         # capture debug BEFORE returning
         _last_debug.clear()
         _last_debug.update({
@@ -1562,7 +1563,7 @@ def generate_deepen_insight(
             "microstep_source": "silence_contract",
             "decision_path": " > ".join(decision_path),
 
-        # presence debug
+            # presence debug
             "presence_stage_prev": presence_stage_prev,
             "presence_stage_today": presence_stage_today,
             "presence_stage_final": presence_stage_final,
@@ -1571,22 +1572,24 @@ def generate_deepen_insight(
             "presence_drift_hits_prev": presence_drift_prev,
             "presence_drift_hits_new": presence_drift_new,
             "presence_dbg": presence_dbg,
-    })
+        })
 
-    print("SILENCE CHECK:",
-      "silenced=", silenced,
-      "reason=", silence_reason,
-      "text=", repr(norm_text))
-    
-    _attach_presence_debug(
-        dbg=_last_debug,
-        reflection_text=presence_text,
-        mood=mood,
-        silenced=True,
-        silence_reason=silence_reason,
-        presence_stage_prev=presence_stage_prev,
-        presence_drift_hits_prev=presence_drift_prev,
-    )
+        print("SILENCE CHECK:",
+            "silenced=", silenced,
+            "reason=", silence_reason,
+            "text=", repr(norm_text))
+
+        _attach_presence_debug(
+            dbg=_last_debug,
+            reflection_text=presence_text,
+            mood=mood,
+            silenced=True,
+            silence_reason=silence_reason,
+            presence_stage_prev=presence_stage_prev,
+            presence_drift_hits_prev=presence_drift_prev,
+        )
+
+        return stillness, insight, microstep
 
     # -------------------------
     # Normal path continues
@@ -1596,7 +1599,7 @@ def generate_deepen_insight(
     prompt = _compose_prompt(theme_label, reflection_text, followup_note, recent_followups)
 
     # -------------------------
-    # 2) Safe model call (import-safe, circular-safe)
+    # 2) Safe model call (lazy import, circular-safe)
     # -------------------------
 
     raw_insight = ""
@@ -1631,11 +1634,11 @@ def generate_deepen_insight(
 
             # Do NOT re-raise — silence logic handles downstream behavior
             raw_insight = ""
-            aw_second = ""
+            raw_second = ""
 
             _dp("model=error_handled")
 
-    # If AI failed, force silence contract (Option A/your chosen behavior)
+    # 2b) AI unavailable → force silence contract + return
     if dbg.get("model_fallback_reason") in ("rate_limited", "model_error"):
         silenced = True
         silence_reason = "ai_unavailable"
@@ -1692,7 +1695,7 @@ def generate_deepen_insight(
     repeat_avoided = False
 
     # -------------------------
-    # 4) Fallback insight
+    # 4) Theme fallback if empty
     # -------------------------
     if not (insight or "").strip():
         insight = THEME_FALLBACK_INSIGHT.get(theme_label, THEME_FALLBACK_INSIGHT["Clarity"])
@@ -1712,7 +1715,7 @@ def generate_deepen_insight(
         insight_tone_adjusted = False
 
     # -------------------------
-    # Theme signature (debug-only)
+    # 6) Theme shaping
     # -------------------------
     theme_sig_strength, theme_sig_hits = _theme_signature_strength(theme_label, insight)
     theme_signature_decay = (
@@ -1740,7 +1743,7 @@ def generate_deepen_insight(
     pre_category_microstep = microstep
 
     # -------------------------
-    # 7) Category selection + mood bias (A.8.1 + C)
+    # 7) Category selection + mood bias
     # -------------------------
     # --- semantic category (optional) ---
     semantic_category = ""
@@ -1818,7 +1821,7 @@ def generate_deepen_insight(
         _dp("category_applied")
 
     # -------------------------
-    # 9) Guardrails
+    # 9) Guardrails (verb-first, no mantra, no multi-step)
     # -------------------------
     microstep = (microstep or "").strip()
     invalid = (not _is_valid_microstep(microstep))
@@ -1851,7 +1854,7 @@ def generate_deepen_insight(
         dbg["fallback_rotated_to"] = base_fallback
 
     # -------------------------
-    # 10) Hard-safe if still invalid
+    # 10) Hard-safe fallback
     # -------------------------
     if (
         (not _is_valid_microstep(microstep))
@@ -1865,7 +1868,7 @@ def generate_deepen_insight(
         _dp("hard_safe=fired")
 
     # -------------------------
-    # 11) FINAL repeat prevention (even if category enforcement didn’t run)
+    # 11) Anti-repeat (FINAL pass, deterministic)
     # -------------------------
     final_cat = _pick_category_for_step(microstep, preferred=(chosen_category or base_category))
 
@@ -1935,7 +1938,7 @@ def generate_deepen_insight(
     )
 
     # -------------------------
-    # 13) Debug capture (A.4 + C5) — PURE SNAPSHOT
+    # 13) Debug capture (pure snapshot) + memory write
     # -------------------------
     _last_debug.clear()
     _last_debug.update({

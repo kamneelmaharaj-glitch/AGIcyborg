@@ -2020,24 +2020,35 @@ def generate_deepen_insight(
     
     print("🧠 E1 memory write reached")
     presence_stage = dbg.get("presence_stage_final")
-    # --- E1 memory write (record-only, non-intrusive) ---
-    mem_rc = {"enabled": True, "written": False, "error": None}  # default
+    # -------------------------
+    # E1) Memory write (record-only, non-intrusive)
+    # -------------------------
 
-    try:
-        from agi.memory import record_reflection_memory
-        mem_rc = record_reflection_memory(
-            theme=theme,
-            mood=mood,
-            microstep=microstep or "",
-            insight=(insight or None),
-            silenced=bool(silenced),
-            silence_reason=silence_reason,
-            presence_stage=dbg.get("presence_stage_final"),
-        )
-    except Exception as e:
-        mem_rc = {"enabled": True, "written": False, "error": str(e)[:160]}
+    mem_enabled = os.getenv("AGI_MEMORY_ENABLED", "1") == "1"
+    mem_rc = {"enabled": mem_enabled, "written": False, "error": None}
 
-    print("MEMDBG:", mem_rc)
+    if mem_enabled:
+        try:
+            # Import locally to avoid circular imports at module load time
+            from agi.memory import record_reflection_memory
+
+            mem_rc = record_reflection_memory(
+                theme=theme_label,                     # use normalized label
+                mood=mood,
+                microstep=(microstep or ""),
+                insight=(insight if insight is not None else None),
+                silenced=bool(silenced),
+                silence_reason=silence_reason,
+                presence_stage=presence_stage_final,   # ✅ use the actual final var
+            )
+        except Exception as e:
+            mem_rc = {"enabled": True, "written": False, "error": str(e)[:160]}
+
+    # Attach to debug snapshot (safe)
     _last_debug["memdbg"] = mem_rc
+
+    # Only print in debug mode
+    if os.getenv("AGI_DEBUG") == "1":
+        print("MEMDBG:", mem_rc)
 
     return stillness, insight, microstep

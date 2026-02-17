@@ -148,6 +148,16 @@ def _ensure_presence_carry(state_row):
             "reason": "carry_error",
         }
 
+    # ✅ NORMALIZE HERE (outside try/except)
+    carry = st.session_state.get("presence_carry") or {}
+
+    st.session_state["presence_carry"] = {
+        **carry,
+        "freshness": (carry.get("freshness") or "dormant"),
+        "tone": (carry.get("tone") or "gentle"),
+        "stage_carry": carry.get("stage_carry"),
+        "reason": (carry.get("reason") or "defaulted"),
+    }
 
 def render_today_panel(sb, user_id) -> None:
     """
@@ -226,7 +236,17 @@ def render_today_panel(sb, user_id) -> None:
                 phase="Inhale… Exhale…",
                 hint=hint,
             )
-
+   
+        # -------------------------
+        # DEBUG (only when AGI_DEBUG=1)
+        # -------------------------
+        if os.getenv("AGI_DEBUG") == "1":
+            pc = st.session_state.get("presence_carry") or {}
+            st.caption(
+                f"Presence carry-over: {pc.get('freshness','dormant')} · "
+                f"tone={pc.get('tone','gentle')} · "
+                f"reason={pc.get('reason','defaulted')}"
+            )
     render_microstep_widget(sb, user_id)
 
 def _why_it_matters_line(theme: str, microstep: str) -> str:
@@ -720,18 +740,6 @@ def render_microstep_widget(sb, user_id: str) -> None:
     except Exception:
         pass
     
-
-    # --- DEBUG (V1) ---
-    import os
-
-    if os.getenv("AGI_DEBUG") == "1":
-        carry = st.session_state.get("presence_carry", {})
-        st.caption(
-            f"Presence carry-over: "
-            f"{carry.get('freshness')} · "
-            f"tone={carry.get('tone')} · "
-            f"reason={carry.get('reason')}"
-    )
        
 
     # --- Load recent micro-steps (last 7 days) ---

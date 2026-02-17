@@ -112,20 +112,6 @@ def infer_presence_carryover(
 
     last_reflection_at = _parse_iso(state_row.get("last_reflection_at"))
     last_silenced = bool(state_row.get("last_silenced", False))
-    last_stage = state_row.get("last_presence_stage")
-
-    # Stage carry (best-effort, never computed/advanced here)
-    stage_carry: Optional[int] = None
-    try:
-        if last_stage is None:
-            stage_carry = None
-        elif isinstance(last_stage, int):
-            stage_carry = last_stage
-        else:
-            s = str(last_stage).strip()
-            stage_carry = int(s) if s.isdigit() else None
-    except Exception:
-        stage_carry = None
 
     # If timestamp missing/unparseable: be conservative + gentle
     if not last_reflection_at:

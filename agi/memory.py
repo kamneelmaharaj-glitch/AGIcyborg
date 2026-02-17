@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 import re
 from typing import Any, Dict, List, Optional
+from datetime import datetime, timezone
 
 
 def _env_truthy(name: str, default: str = "0") -> bool:
@@ -28,7 +29,22 @@ def _clip(s: Optional[str], n: int) -> Optional[str]:
     s = s.strip()
     return s if len(s) <= n else (s[:n] + "…")
 
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
+def _best_effort_user_id() -> Optional[str]:
+    """
+    Try to get user_id without forcing callers to pass it.
+    Works in Streamlit runtime; safely returns None otherwise.
+    """
+    try:
+        import streamlit as st  # type: ignore
+        from agi.auth import S_USER_ID  # type: ignore
+        uid = st.session_state.get(S_USER_ID)
+        return str(uid).strip() if uid else None
+    except Exception:
+        return None
+    
 def _get_supabase_from_agi_db():
     """
     Attempts to obtain a Supabase client from agi.db using common patterns.
@@ -104,11 +120,31 @@ def record_reflection_memory(
     try:
         sb = supabase or _get_supabase_from_agi_db()
     except Exception as e:
-        # don't break app/tests if DB wiring isn't present
-        return {"enabled": True, "written": False, "error": str(e)[:200], "reason": "no_supabase"}
+        return {
+            "enabled": True,
+            "written": False,
+            "error": str(e)[:200],
+            "reason": "insert_failed",
+        }
 
     try:
         res = sb.table(table_name).insert(payload).execute()
+
+        # D-2c: Persist Presence stage into reflection_state (best-effort, non-blocking)
+        try:
+            uid = _best_effort_user_id()
+            if uid and (presence_stage is not None):
+                sb.table("reflection_state").upsert(
+                    {
+                        "user_id": uid,
+                        "last_presence_stage": int(presence_stage),
+                        "last_presence_updated_at": _now_iso(),
+                    },
+                    on_conflict="user_id",
+                ).execute()
+        except Exception:
+            pass
+        
         data = getattr(res, "data", None)
         err = getattr(res, "error", None)
         return {
@@ -120,7 +156,7 @@ def record_reflection_memory(
 
         print("MEM INSERT res.data:", getattr(res, "data", None))
         print("MEM INSERT res.error:", getattr(res, "error", None))
-        
+
         return {"enabled": True, "written": False, "error": str(e)[:200], "reason": "insert_failed"}
 
 

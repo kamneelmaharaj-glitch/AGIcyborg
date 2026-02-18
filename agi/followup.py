@@ -774,53 +774,44 @@ def render_microstep_widget(sb, user_id: str) -> None:
         is_done_db = bool((latest or {}).get("done"))
 
         if latest:
-            # ----- Today card (has a micro-step) -----
             theme = (latest.get("theme") or "Reflection").strip() or "Reflection"
             created_at = _fmt_when(latest.get("created_at"))
-            micro_text = latest.get("micro_text", "—")
+            is_silenced = bool(latest.get("silenced"))
 
             st.markdown("### Today’s micro-step")
             st.caption(f"{theme} • Last follow-up: {created_at}")
-            st.write(f"**Tiny action:** {micro_text}")
 
-            # Silence-aware why-it-matters line
-            if latest and latest.get("silenced"):
-                why_line = "No pushing today. This is simply a gentle return."
+            if is_silenced:
+                # Silence day: no “task”, no checkbox
+                st.markdown("🪷 *Stillness is active. Nothing to complete today.*")
+                st.caption("If you want, write one gentle line in **Deepen** — or rest.")
             else:
+                micro_text = (latest.get("micro_text") or "—").strip()
+
+                st.write(f"**Tiny action:** {micro_text}")
+
                 why_line = _why_it_matters_line(theme, micro_text)
+                st.markdown(f"🪷 *{why_line}*")
 
-            st.markdown(f"🪷 *{why_line}*")
+                # Streak line
+                if streak > 0:
+                    st.caption(
+                        f"Streak: {streak} day{'s' if streak != 1 else ''} in a row • "
+                        f"Done last 7 days: {completed_7}"
+                    )
+                else:
+                    st.caption("Streak: Begin your first day by completing this tiny action ✨")
 
-            # Streak line
-            if streak > 0:
-                st.caption(
-                    f"Streak: {streak} day{'s' if streak != 1 else ''} in a row • "
-                    f"Done last 7 days: {completed_7}"
+                # ✅ Done toggle (only when not silenced)
+                new_done = st.checkbox(
+                    "Mark this micro-step as done for today",
+                    value=is_done_db,
+                    key=done_key,
                 )
-            else:
-                st.caption(
-                    "Streak: Begin your first day by completing this tiny action ✨"
-                )
 
-            # ✅ Done toggle
-            new_done = st.checkbox(
-                "Mark this micro-step as done for today",
-                value=is_done_db,        # initial state from DB
-                key=done_key,
-            )
-
-            # If the user changed the value compared to DB, persist it
-            if followup_id and sb and user_id and (new_done != is_done_db):
-                _set_microstep_done(sb, followup_id, new_done)
-                st.rerun()
-
-        else:
-            # ----- Empty-state card (no micro-step for today) -----
-            st.markdown("### Today’s micro-step")
-            st.caption(
-                "No micro-steps for today yet. After you use **Deepen** on a reflection, "
-                "your tiny action for today will appear here."
-            )
+                if followup_id and sb and user_id and (new_done != is_done_db):
+                    _set_microstep_done(sb, followup_id, new_done)
+                    st.rerun()
 
     # --- Micro-step history (last 7 days) ---
     if not rows:
@@ -1300,17 +1291,35 @@ def render_mentor_followup(
                             insight=insight,
                             microstep=microstep,
                         )
+                        
+                        dbg = dbg or {}  # ensure dict
+
+                        # Preferred: trust dbg from generate_deepen_insight (single source of truth)
+                        silenced = bool(dbg.get("silenced", False))
+
+                        # Safety fallback: if dbg missing, infer from contract (silence returns insight=None)
+                        if "silenced" not in dbg:
+                            silenced = (insight is None)
 
                         if ok:
                             st.session_state[rib_key] = True
+                            st.session_state["last_deepen_silenced"] = silenced
                             st.rerun()
 
-            # — Ribbon (shows once, then clears) —
+            # - Ribbon (shows once, then clears) -
             if st.session_state.get(rib_key):
+                silenced = st.session_state.get("last_deepen_silenced", False)
+
+                if silenced:
+                    msg = "🪷 Deepen saved. Stillness is active today."
+                else:
+                    msg = "✅ Deepen saved. A tiny action has been added below."
+
                 st.markdown(
-                    '<div class="fu-ribbon">✅ Deepen saved. A tiny action has been added below.</div>',
+                    f'<div class="fu-ribbon">{msg}</div>',
                     unsafe_allow_html=True,
                 )
+
                 st.session_state.pop(rib_key, None)
 
         # ----- Right column: current AI card (unified pattern) -----

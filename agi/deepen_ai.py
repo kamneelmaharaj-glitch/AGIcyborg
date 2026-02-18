@@ -1396,6 +1396,46 @@ def _silence_output(*, mood: str) -> tuple[str, None, str]:
     microstep = "Return to one calm breath."
     return stillness, insight, microstep
 
+def _return_silence_contract(
+    *,
+    theme_label: str,
+    mood: str,
+    silenced: bool,
+    silence_reason: Optional[str],
+    stillness: str,
+    decision_path: List[str],
+    dbg: dict,
+    # optional presence debug bundle (pass if you have it at that point)
+    presence_payload: Optional[dict] = None,
+) -> Tuple[str, Optional[str], str]:
+    """
+    Single silence return contract for ALL silence exits.
+    Always returns (stillness, insight=None, microstep="").
+    Also snapshots _last_debug consistently.
+    """
+    insight = None
+    microstep = ""
+
+    _last_debug.clear()
+    payload = {
+        "theme": theme_label,
+        "mood": mood,
+        "silenced": bool(silenced),
+        "silence_reason": silence_reason,
+        "silence_rule": dbg.get("silence_rule") or dbg.get("rule"),
+        "stillness": stillness,
+        "final_insight": insight,
+        "final_microstep": microstep,
+        "insight_source": "silence_contract",
+        "microstep_source": "silence_contract",
+        "decision_path": " > ".join(decision_path),
+    }
+    if isinstance(presence_payload, dict):
+        payload.update(presence_payload)
+
+    _last_debug.update(payload)
+    return stillness, insight, microstep
+
 # -------------------------------------------------------------------
 # Public API
 # -------------------------------------------------------------------
@@ -1544,26 +1584,9 @@ def generate_deepen_insight(
     if silenced:
         _dp(f"silenced:{silence_reason}")
 
-        # IMPORTANT: silence path must still return 3 values
         stillness = _silence_stillness_for(mood)
-        insight = None
-        microstep = ""  # keep string for UI safety (no unpack issues)
 
-        # capture debug BEFORE returning
-        _last_debug.clear()
-        _last_debug.update({
-            "theme": theme_label,
-            "mood": mood,
-            "silenced": True,
-            "silence_reason": silence_reason,
-            "stillness": stillness,
-            "final_insight": insight,         # None by contract
-            "final_microstep": microstep,     # safe default
-            "insight_source": "silence_contract",
-            "microstep_source": "silence_contract",
-            "decision_path": " > ".join(decision_path),
-
-            # presence debug
+        presence_payload = {
             "presence_stage_prev": presence_stage_prev,
             "presence_stage_today": presence_stage_today,
             "presence_stage_final": presence_stage_final,
@@ -1572,13 +1595,9 @@ def generate_deepen_insight(
             "presence_drift_hits_prev": presence_drift_prev,
             "presence_drift_hits_new": presence_drift_new,
             "presence_dbg": presence_dbg,
-        })
+        }
 
-        print("SILENCE CHECK:",
-            "silenced=", silenced,
-            "reason=", silence_reason,
-            "text=", repr(norm_text))
-
+        # keep this if you still want the attach helper
         _attach_presence_debug(
             dbg=_last_debug,
             reflection_text=presence_text,
@@ -1589,7 +1608,16 @@ def generate_deepen_insight(
             presence_drift_hits_prev=presence_drift_prev,
         )
 
-        return stillness, insight, microstep
+        return _return_silence_contract(
+            theme_label=theme_label,
+            mood=mood,
+            silenced=True,
+            silence_reason=silence_reason,
+            stillness=stillness,
+            decision_path=decision_path,
+            dbg=dbg,
+            presence_payload=presence_payload,
+        )
 
     # -------------------------
     # Normal path continues
@@ -1648,22 +1676,16 @@ def generate_deepen_insight(
         _dp("model=ai_unavailable_to_silence")
 
         stillness = _silence_stillness_for(mood)
-        insight = None
-        microstep = ""
-
-        _last_debug.clear()
-        _last_debug.update({
-            "theme": theme_label,
-            "mood": mood,
-            "silenced": True,
-            "silence_reason": silence_reason,
-            "silence_rule": "ai_unavailable",
-            "stillness": stillness,
-            "final_insight": insight,
-            "final_microstep": microstep,
-            "decision_path": " > ".join(decision_path),
-        })
-        return stillness, insight, microstep
+        return _return_silence_contract(
+            theme_label=theme_label,
+            mood=mood,
+            silenced=True,
+            silence_reason=silence_reason,
+            stillness=stillness,
+            decision_path=decision_path,
+            dbg=dbg,
+            presence_payload=None,  # optional here
+        )
 
     # -------------------------
     # 3) Prefix strip + microstep reduction

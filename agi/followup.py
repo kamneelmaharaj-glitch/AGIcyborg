@@ -147,7 +147,22 @@ def _ensure_presence_carry(state_row):
             "stage_carry": None,
             "reason": "carry_error",
         }
+    # after: carry = infer_presence_carryover(state_row)
 
+    # If reflection_state doesn't have last_presence_stage, backfill from reflection_memory (read-only)
+    try:
+        from agi.memory import fetch_last_presence_stage
+        uid = st.session_state.get(S_USER_ID)
+        stage_from_mem = fetch_last_presence_stage(user_id=str(uid)) if uid else None
+    except Exception:
+        stage_from_mem = None
+
+    st.session_state["presence_carry"] = {
+        "freshness": getattr(carry, "freshness", "dormant"),
+        "tone": getattr(carry, "tone", "gentle"),
+        "stage_carry": (getattr(carry, "stage_carry", None) if getattr(carry, "stage_carry", None) is not None else stage_from_mem),
+        "reason": (getattr(carry, "reason", None) or ("mem_stage" if stage_from_mem is not None else "defaulted")),
+    }
     # ✅ NORMALIZE HERE (outside try/except)
     carry = st.session_state.get("presence_carry") or {}
 
@@ -245,6 +260,7 @@ def render_today_panel(sb, user_id) -> None:
             st.caption(
                 f"Presence carry-over: {pc.get('freshness','dormant')} · "
                 f"tone={pc.get('tone','gentle')} · "
+                f"stage={pc.get('stage_carry','—')} · "
                 f"reason={pc.get('reason','defaulted')}"
             )
     render_microstep_widget(sb, user_id)

@@ -144,7 +144,7 @@ def record_reflection_memory(
                 ).execute()
         except Exception:
             pass
-        
+
         data = getattr(res, "data", None)
         err = getattr(res, "error", None)
         return {
@@ -159,6 +159,44 @@ def record_reflection_memory(
 
         return {"enabled": True, "written": False, "error": str(e)[:200], "reason": "insert_failed"}
 
+def fetch_last_presence_stage(
+    *,
+    user_id: str,
+    supabase=None,
+    table_name: str = "reflection_memory",
+) -> Optional[int]:
+    """
+    Read-only: returns the most recent presence_stage for a user (or None).
+    """
+    if not _memory_enabled():
+        return None
+
+    try:
+        sb = supabase or _get_supabase_from_agi_db()
+    except Exception:
+        return None
+
+    try:
+        res = (
+            sb.table(table_name)
+            .select("presence_stage")
+            .eq("user_id", str(user_id))
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        rows = getattr(res, "data", None) or []
+        if not rows:
+            return None
+        v = rows[0].get("presence_stage")
+        if v is None:
+            return None
+        try:
+            return int(v)
+        except Exception:
+            return None
+    except Exception:
+        return None
 
 def fetch_recent_microsteps(
     limit: int = 25,

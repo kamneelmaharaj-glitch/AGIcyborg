@@ -29,6 +29,179 @@ class PresenceCarryover:
     stage_carry: Optional[int]
     reason: str
 
+# ----------------------------
+# Presence stage model (0–3)
+# ----------------------------
+
+@dataclass
+class PresenceUpdate:
+    stage_final: int
+    drift_hits_new: int
+    day: str  # YYYY-MM-DD
+    dbg: Dict[str, Any]
+
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _utc_day_str(dt: Optional[datetime] = None) -> str:
+    d = dt or _utc_now()
+    return d.date().isoformat()
+
+
+def clamp_int(x: int, lo: int, hi: int) -> int:
+    return max(lo, min(hi, int(x)))
+
+
+def update_presence_stage(
+    *,
+    stage_prev: int,
+    stage_today: int,
+    silenced: bool,
+    mood: str,
+    drift_hits_prev: int,
+    silence_reason: Optional[str],
+    drift_threshold: int = 3,
+) -> PresenceUpdate:
+    """
+    Core logic (agreed):
+      - Silence: freeze stage + drift (no changes)
+      - Good day: stage +1 (max 3), drift resets
+      - Drift day: drift_hits +1
+      - 3 drift hits: stage -1 (min 0), drift resets
+      - No daily decay
+    """
+    stage_prev = clamp_int(stage_prev, 0, 3)
+    stage_today = clamp_int(stage_today, 0, 3)
+    drift_hits_prev = clamp_int(drift_hits_prev, 0, 99)
+
+    dbg: Dict[str, Any] = {
+        "stage_prev": stage_prev,
+        "stage_today": stage_today,
+        "drift_hits_prev": drift_hits_prev,
+        "silenced": bool(silenced),
+        "silence_reason": silence_reason,
+        "mood": mood,
+    }
+
+    day = _utc_day_str()
+
+    # 1) Silence freezes everything
+    if silenced:
+        dbg["action"] = "freeze"
+        return PresenceUpdate(
+            stage_final=stage_prev,
+            drift_hits_new=drift_hits_prev,
+            day=day,
+            dbg=dbg,
+        )
+
+    # 2) Determine good vs drift day
+    # Good day = today's stage signal >= prev stage (trend up/steady)
+    # Drift day = today's stage signal < prev stage (trend down)
+    good_day = stage_today >= stage_prev
+    dbg["good_day"] = bool(good_day)
+
+    if good_day:
+        stage_final = clamp_int(stage_prev + 1, 0, 3) if stage_prev < 3 else 3
+        drift_hits_new = 0
+        dbg["action"] = "stage_up_reset_drift"
+        dbg["stage_final"] = stage_final
+        dbg["drift_hits_new"] = drift_hits_new
+        return PresenceUpdate(stage_final=stage_final, drift_hits_new=drift_hits_new, day=day, dbg=dbg)
+
+    # drift day
+    drift_hits_new = drift_hits_prev + 1
+    dbg["action"] = "drift_hit"
+    dbg["drift_hits_new"] = drift_hits_new
+
+    if drift_hits_new >= drift_threshold:
+        stage_final = clamp_int(stage_prev - 1, 0, 3)
+        drift_hits_new = 0
+        dbg["action"] = "stage_down_reset_drift"
+        dbg["stage_final"] = stage_final
+        dbg["drift_hits_new"] = drift_hits_new
+        return PresenceUpdate(stage_final=stage_final, drift_hits_new=drift_hits_new, day=day, dbg=dbg)
+
+    # drift accumulates, stage unchanged
+    return PresenceUpdate(
+        stage_final=stage_prev,
+        drift_hits_new=drift_hits_new,
+        day=day,
+        dbg=dbg,
+    )
+
+
+# ----------------------------
+# Reflection_state read/write
+# ----------------------------
+
+def fetch_presence_state(sb, user_id: str) -> Dict[str, Any]:
+    """
+    Reads the persisted presence fields from reflection_state.
+    Returns safe defaults if missing.
+    """
+    defaults = {
+        "last_presence_stage": 0,
+        "presence_drift_hits": 0,
+        "last_presence_day": None,
+        "last_presence_updated_at": None,
+    }
+
+    if not (sb and user_id):
+        return defaults
+
+    try:
+        res = (
+            sb.table("reflection_state")
+              .select("last_presence_stage,presence_drift_hits,last_presence_day,last_presence_updated_at")
+              .eq("user_id", str(user_id))
+              .maybe_single()
+              .execute()
+        )
+        row = getattr(res, "data", None) or {}
+        out = {**defaults, **row}
+        # normalize ints
+        out["last_presence_stage"] = int(out.get("last_presence_stage") or 0)
+        out["presence_drift_hits"] = int(out.get("presence_drift_hits") or 0)
+        return out
+    except Exception:
+        return defaults
+
+
+def persist_presence_state(
+    sb,
+    user_id: str,
+    *,
+    stage_final: int,
+    drift_hits_new: int,
+    day: str,
+) -> None:
+    """
+    Writes back into reflection_state. Best-effort: never raise to caller.
+    """
+    if not (sb and user_id):
+        return
+
+    payload = {
+        "last_presence_stage": int(stage_final),
+        "presence_drift_hits": int(drift_hits_new),
+        "last_presence_day": day,  # DATE column
+        "last_presence_updated_at": _utc_now().isoformat(),
+        "updated_at": _utc_now().isoformat(),  # keep your general stamp consistent
+    }
+
+    try:
+        (
+            sb.table("reflection_state")
+              .update(payload)
+              .eq("user_id", str(user_id))
+              .execute()
+        )
+    except Exception:
+        pass
+
 def tone_copy(*, normal: str, gentle: str, tone: str) -> str:
     return gentle if tone == "gentle" else normal
 

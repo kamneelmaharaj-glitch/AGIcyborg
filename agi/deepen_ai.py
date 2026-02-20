@@ -26,7 +26,6 @@ from agi.mood import detect_mood
 import os
 import re
 from agi.silence_contract import should_silence
-from agi.utils import resolve_microstep_source
 from agi.utils import resolve_microstep_source, resolve_microstep_dominance
 from agi.persistence.state import upsert_reflection_state
 
@@ -34,7 +33,7 @@ from agi.memory import record_reflection_memory
 
 from agi.threads.presence_thread import (
     infer_presence_stage,
-    update_presence_stage,
+    update_presence_stage as presence_update_stage,
     presence_stage_label,
 )
 
@@ -58,29 +57,6 @@ def _attach_presence_debug(
         mood=mood,
         silenced=silenced,
     )
-
-    upd = update_presence_stage(
-        stage_prev=presence_stage_prev,
-        stage_today=stage_today,
-        silenced=silenced,
-        mood=mood,
-        drift_hits_prev=presence_drift_hits_prev,
-        silence_reason=silence_reason,
-    )
-
-    dbg.update({
-        "presence_stage_prev": int(presence_stage_prev),
-        "presence_drift_hits_prev": int(presence_drift_hits_prev),
-
-        "presence_stage_today": int(stage_today),
-        "presence_stage_reason": stage_reason,
-
-        "presence_stage_final": int(upd.stage_final),
-        "presence_stage_label": presence_stage_label(upd.stage_final),
-        "presence_drift_hits_new": int(upd.drift_hits_new),
-
-        "presence_dbg": upd.dbg,
-    })
 
 # -----------------------------------
 # Silence output (C5)
@@ -1204,8 +1180,6 @@ def _cycle_fallback_for_category(
     meta["picked_index"] = 0
     return primary, meta
 
-import re
-from typing import Optional
 
 _CATEGORY_PATTERNS = {
     "breath": re.compile(r"\b(breath|breathe|exhale|inhale|belly|abdomen)\b", re.IGNORECASE),
@@ -1344,8 +1318,6 @@ def _compose_prompt(
         "MICROSTEP: <...>\n"
     )
 
-import re  # make sure this exists near the top of the file
-
 def _is_near_empty(text: str, *, min_alpha: int = 3) -> bool:
     t = (text or "").strip().lower()
     if not t:
@@ -1479,9 +1451,6 @@ def generate_deepen_insight(
     # One norm_text used everywhere (mood, bias, debug)
     norm_text = (reflection_text + "\n" + followup_note).strip()
 
-    # Debug scratch (used by silence gate + rotation flags)
-    dbg: dict = {}
-
     # --- Debug hygiene (A) ---
     decision_path: List[str] = []
 
@@ -1555,10 +1524,11 @@ def generate_deepen_insight(
     dbg["subdued"] = mood in ("drained", "soft")
 
     # -------------------------
-    # 1b) Presence inference snapshot (runs even on silence; debug + memory)
+    # Presence thread (D) — best-effort, never blocks Deepen
     # -------------------------
-    presence_stage_prev = 2   # safe default for now
-    presence_drift_prev = 0   # safe default for now
+    # Presence snapshot (runs even on silence; never blocks)
+    presence_stage_prev = 2    # TODO load from reflection_state
+    presence_drift_prev = 0    # TODO load from reflection_state
 
     presence_text = (reflection_text + "\n" + followup_note).strip()
 
@@ -1568,7 +1538,7 @@ def generate_deepen_insight(
         silenced=silenced,
     )
 
-    presence_update = update_presence_stage(
+    presence_update = presence_update_stage(
         stage_prev=presence_stage_prev,
         stage_today=presence_stage_today,
         silenced=silenced,
@@ -1582,10 +1552,7 @@ def generate_deepen_insight(
     presence_dbg = presence_update.dbg
 
     if silenced:
-        _dp(f"silenced:{silence_reason}")
-
         stillness = _silence_stillness_for(mood)
-
         presence_payload = {
             "presence_stage_prev": presence_stage_prev,
             "presence_stage_today": presence_stage_today,
@@ -1596,18 +1563,6 @@ def generate_deepen_insight(
             "presence_drift_hits_new": presence_drift_new,
             "presence_dbg": presence_dbg,
         }
-
-        # keep this if you still want the attach helper
-        _attach_presence_debug(
-            dbg=_last_debug,
-            reflection_text=presence_text,
-            mood=mood,
-            silenced=True,
-            silence_reason=silence_reason,
-            presence_stage_prev=presence_stage_prev,
-            presence_drift_hits_prev=presence_drift_prev,
-        )
-
         return _return_silence_contract(
             theme_label=theme_label,
             mood=mood,
@@ -1666,16 +1621,32 @@ def generate_deepen_insight(
 
             _dp("model=error_handled")
 
-    # 2b) AI unavailable → force silence contract + return
+    # 2b) AI unavailable -> force silence contract + return
     if dbg.get("model_fallback_reason") in ("rate_limited", "model_error"):
         silenced = True
         silence_reason = "ai_unavailable"
+
         dbg["silenced"] = True
         dbg["silence_reason"] = silence_reason
         dbg["silence_rule"] = "ai_unavailable"
         _dp("model=ai_unavailable_to_silence")
 
         stillness = _silence_stillness_for(mood)
+
+        # --- Presence payload (freeze on silence) ---
+        # Make sure these vars exist earlier in the function:
+        # presence_stage_prev, presence_drift_prev, presence_stage_today, presence_reason
+        presence_payload = {
+            "presence_stage_prev": presence_stage_prev,
+            "presence_stage_today": presence_stage_today,
+            "presence_stage_final": presence_stage_prev,      # freeze
+            "presence_stage_label": presence_stage_label(presence_stage_prev),
+            "presence_reason": "ai_unavailable_freeze",
+            "presence_drift_hits_prev": presence_drift_prev,
+            "presence_drift_hits_new": presence_drift_prev,   # freeze
+            "presence_dbg": {"note": "forced_silence_on_ai_unavailable"},
+        }
+
         return _return_silence_contract(
             theme_label=theme_label,
             mood=mood,
@@ -1684,7 +1655,7 @@ def generate_deepen_insight(
             stillness=stillness,
             decision_path=decision_path,
             dbg=dbg,
-            presence_payload=None,  # optional here
+            presence_payload=presence_payload,
         )
 
     # -------------------------
@@ -2041,12 +2012,12 @@ def generate_deepen_insight(
     )
     
     print("🧠 E1 memory write reached")
-    presence_stage = dbg.get("presence_stage_final")
+    presence_stage = presence_stage_final
     # -------------------------
     # E1) Memory write (record-only, non-intrusive)
     # -------------------------
 
-    mem_enabled = os.getenv("AGI_MEMORY_ENABLED", "1") == "1"
+    mem_enabled = os.getenv("AGI_MEMORY_ENABLED", "0") == "1"
     mem_rc = {"enabled": mem_enabled, "written": False, "error": None}
 
     if mem_enabled:

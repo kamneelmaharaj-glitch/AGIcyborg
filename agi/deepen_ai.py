@@ -23,6 +23,7 @@ from typing import List, Tuple, Optional, Dict, Any
 
 from agi.mood import detect_mood
 
+import streamlit as st
 import os
 import re
 from agi.silence_contract import should_silence
@@ -1523,12 +1524,34 @@ def generate_deepen_insight(
 
     dbg["subdued"] = mood in ("drained", "soft")
 
-    # -------------------------
-    # Presence thread (D) — best-effort, never blocks Deepen
-    # -------------------------
-    # Presence snapshot (runs even on silence; never blocks)
-    presence_stage_prev = 2    # TODO load from reflection_state
-    presence_drift_prev = 0    # TODO load from reflection_state
+    # --- Load presence continuity from reflection_state (D2) ---
+    presence_stage_prev = 0
+    presence_drift_prev = 0
+    state_row = None
+
+    try:
+        import streamlit as st
+        from agi.db import get_client as get_supabase
+        from agi.auth import S_USER_ID
+
+        sb = get_supabase()
+        user_id = st.session_state.get(S_USER_ID)
+    except Exception as e:
+        sb = None
+        user_id = None
+        if os.getenv("AGI_DEBUG") == "1":
+            print("presence: sb/user load failed:", str(e)[:160])
+
+    try:
+        from agi.persistence.state import fetch_reflection_state
+        if sb and user_id:
+            state_row = fetch_reflection_state(sb, user_id=str(user_id))
+            if state_row:
+                presence_stage_prev = int(state_row.get("last_presence_stage") or 0)
+                presence_drift_prev = int(state_row.get("presence_drift_hits") or 0)
+    except Exception as e:
+        if os.getenv("AGI_DEBUG") == "1":
+            print("presence: fetch_reflection_state failed:", str(e)[:160])
 
     presence_text = (reflection_text + "\n" + followup_note).strip()
 
@@ -1536,20 +1559,48 @@ def generate_deepen_insight(
         reflection_text=presence_text,
         mood=mood,
         silenced=silenced,
-    )
+        )
 
     presence_update = presence_update_stage(
-        stage_prev=presence_stage_prev,
-        stage_today=presence_stage_today,
-        silenced=silenced,
-        mood=mood,
-        drift_hits_prev=presence_drift_prev,
-        silence_reason=silence_reason,
-    )
+    stage_prev=presence_stage_prev,
+    stage_today=presence_stage_today,
+    silenced=silenced,
+    mood=mood,
+    drift_hits_prev=presence_drift_prev,
+    silence_reason=silence_reason,
+)
 
     presence_stage_final = presence_update.stage_final
     presence_drift_new = presence_update.drift_hits_new
     presence_dbg = presence_update.dbg
+
+    if os.getenv("AGI_DEBUG") == "1":
+        print("PRESENCE DBG:", {
+            "prev": presence_stage_prev,
+            "today": presence_stage_today,
+            "final": presence_stage_final,
+            "drift_prev": presence_drift_prev,
+            "drift_new": presence_drift_new,
+            "reason": presence_reason,
+        })
+
+    # --- Persist presence (D2) ---
+    try:
+        from datetime import datetime, timezone
+        from agi.persistence.state import upsert_presence_state
+
+        day = datetime.now(timezone.utc).date().isoformat()
+        if sb and user_id:
+            upsert_presence_state(
+                sb,
+                user_id=str(user_id),
+                last_presence_stage=presence_stage_final,
+                presence_drift_hits=presence_drift_new,
+                last_presence_day=day,
+            )
+    except Exception as e:
+        if os.getenv("AGI_DEBUG") == "1":
+            print("presence: upsert_presence_state failed:", str(e)[:160])
 
     if silenced:
         stillness = _silence_stillness_for(mood)

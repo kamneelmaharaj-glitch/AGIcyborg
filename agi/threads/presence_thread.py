@@ -9,6 +9,14 @@ _PRESENCE_WORDS = (
     "breath", "ground", "still", "quiet",
 )
 
+_DRIFT_WORDS = (
+    "scattered", "distracted", "restless", "pulled", "tugged",
+    "scroll", "doomscroll", "doom-scrolling",
+    "switching", "tabs", "bouncing", "fragmented", "foggy",
+    "avoid", "avoiding", "procrastin", "procrastinating",
+    "can't focus", "cannot focus", "hard to focus",
+)
+
 # Presence stages (0-4)
 # 0 Disconnection, 1 Return, 2 Steady, 3 Witness, 4 Abide
 UPLIFT_MOODS = {"clear", "focused", "tender", "hopeful", "soft"}
@@ -39,13 +47,20 @@ def infer_presence_stage(
         return 1, "no_signal"
 
     hits = sum(1 for w in _PRESENCE_WORDS if w in text)
+    drift = sum(1 for w in _DRIFT_WORDS if w in text)
 
-    # Optional: include drained here (matches your system’s “return” behavior)
-    if (mood or "").strip().lower() in ("overwhelmed", "heavy", "drained"):
-        return 1, f"overload_returning(hits={hits},len={len(text)})"
+    # If drift is explicitly present, it should dominate a weak presence hit.
+    # (This prevents "I’m distracted but I want to return to breath" from being misread as grounded.)
+    if drift >= 2:
+        return 1, f"drift_strong(drift={drift},presence={hits},len={len(text)})"
 
-    if len(text) < 40:
-        return 1, f"brief_returning(hits={hits},len={len(text)})"
+    if drift >= 1:
+        # With drift present:
+        # - strong presence can still count (hits>=3 -> witness)
+        # - weak presence should not upgrade beyond "return"
+        if hits >= 3:
+            return 3, f"presence_with_drift(drift={drift},presence={hits},len={len(text)})"
+        return 1, f"drift_day(drift={drift},presence={hits},len={len(text)})"
 
     # Reserve stage 4 for later (sequence-based); keep max at 3 for now
     if hits >= 4:
@@ -64,6 +79,7 @@ def infer_presence_stage(
 class PresenceUpdateResult:
     stage_final: int
     drift_hits_new: int
+    day: str
     dbg: Dict[str, object]
 
 
@@ -156,10 +172,10 @@ def update_presence_stage(
         # D2: strong decay triggers allow immediate -1 (no drift buffering)
         strong_decay = False
 
-        # Optional: treat drained as strong only when low
-        if mood_norm in {"overwhelmed", "drained"} and stage_effective <= 1:
+        # Strong decay ONLY for overwhelmed (drained should use drift buffering)
+        if mood_norm in {"overwhelmed"} and stage_effective <= 1:
             strong_decay = True
-            decay_mode = "strong:overwhelmed_or_drained_low"
+            decay_mode = "strong:overwhelmed_low"
 
         if (not strong_decay) and silenced and (silence_reason_norm in {"emotional_overload", "overload"}):
             strong_decay = True
@@ -209,7 +225,15 @@ def update_presence_stage(
     dbg["presence_drift_hits_new"] = drift_hits_new
     dbg["presence_stage_final"] = stage_final
 
-    return PresenceUpdateResult(stage_final=stage_final, drift_hits_new=drift_hits_new, dbg=dbg)
+    from datetime import datetime, timezone
+    day = datetime.now(timezone.utc).date().isoformat()
+
+    return PresenceUpdateResult(
+    stage_final=stage_final,
+    drift_hits_new=drift_hits_new,
+    day=day,
+    dbg=dbg,
+)
 
 
 # Optional helper to map stage int to label (for UI/debug)

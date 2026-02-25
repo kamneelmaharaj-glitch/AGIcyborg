@@ -78,7 +78,6 @@ def _get_supabase_from_agi_db():
         "get_supabase(), get_sb(), get_client(), or globals supabase/sb."
     )
 
-print("MEM ENABLED:", _memory_enabled())
 
 def record_reflection_memory(
     *,
@@ -89,34 +88,55 @@ def record_reflection_memory(
     silenced: bool,
     silence_reason: Optional[str],
     presence_stage: Optional[int] = None,
-    supabase=None,  # <-- allow injection
+    supabase=None,
     table_name: str = "reflection_memory",
 ) -> Dict[str, Any]:
     """
     E1: record-only. Best-effort: never raises to callers.
-    Returns a small dict for debug.
+
+    DB constraints assumed (based on your schema):
+      - microstep        NOT NULL
+      - microstep_norm   NOT NULL
+      - user_id          exists (you want to require it for integrity)
+
+    Behavior:
+      - Non-silenced + empty microstep -> no write
+      - Silenced + empty microstep -> write with microstep="" / microstep_norm=""
+      - Missing user_id -> no write (integrity)
     """
     if not _memory_enabled():
         return {"enabled": False, "written": False}
 
-    microstep = (microstep or "").strip()
+    # --- require uid for integrity ---
+    uid = _best_effort_user_id()  # may be None outside Streamlit
+    if not uid:
+        return {"enabled": True, "written": False, "reason": "missing_user_id"}
 
-    # Allow E1 write if silenced, even when microstep is empty
-    if not microstep and not silenced:
+    ms = (microstep or "").strip()
+
+    # Non-silence days require a real microstep
+    if not ms and not silenced:
         return {"enabled": True, "written": False, "reason": "empty_microstep"}
 
-    payload = {
+    # Silence days may write even if microstep empty — keep NOT NULL happy
+    if silenced and not ms:
+        ms = ""
+
+    ms_norm = normalize_microstep(ms)  # will be "" if ms == ""
+
+    payload: Dict[str, Any] = {
+        "user_id": str(uid),
         "theme": (theme or "Reflection").strip() or "Reflection",
         "mood": (mood or "soft").strip() or "soft",
         "presence_stage": presence_stage,
-        "microstep": _clip(microstep, 220) if microstep else None,
-        "microstep_norm": normalize_microstep(microstep) if microstep else None,
+        # IMPORTANT: always NOT NULL
+        "microstep": _clip(ms, 220) if ms is not None else "",
+        "microstep_norm": _clip(ms_norm, 220) if ms_norm is not None else "",
         "insight": _clip(insight, 420) if insight else None,
         "silenced": bool(silenced),
         "silence_reason": _clip(silence_reason, 120) if silence_reason else None,
     }
 
-    
     try:
         sb = supabase or _get_supabase_from_agi_db()
     except Exception as e:
@@ -124,27 +144,11 @@ def record_reflection_memory(
             "enabled": True,
             "written": False,
             "error": str(e)[:200],
-            "reason": "insert_failed",
+            "reason": "no_supabase",
         }
 
     try:
         res = sb.table(table_name).insert(payload).execute()
-
-        # D-2c: Persist Presence stage into reflection_state (best-effort, non-blocking)
-        try:
-            uid = _best_effort_user_id()
-            if uid and (presence_stage is not None):
-                sb.table("reflection_state").upsert(
-                    {
-                        "user_id": uid,
-                        "last_presence_stage": int(presence_stage),
-                        "last_presence_updated_at": _now_iso(),
-                    },
-                    on_conflict="user_id",
-                ).execute()
-        except Exception:
-            pass
-
         data = getattr(res, "data", None)
         err = getattr(res, "error", None)
         return {
@@ -153,79 +157,9 @@ def record_reflection_memory(
             "error": (str(err)[:200] if err else None),
         }
     except Exception as e:
-
-        print("MEM INSERT res.data:", getattr(res, "data", None))
-        print("MEM INSERT res.error:", getattr(res, "error", None))
-
-        return {"enabled": True, "written": False, "error": str(e)[:200], "reason": "insert_failed"}
-
-def fetch_last_presence_stage(
-    *,
-    user_id: str,
-    supabase=None,
-    table_name: str = "reflection_memory",
-) -> Optional[int]:
-    """
-    Read-only: returns the most recent presence_stage for a user (or None).
-    """
-    if not _memory_enabled():
-        return None
-
-    try:
-        sb = supabase or _get_supabase_from_agi_db()
-    except Exception:
-        return None
-
-    try:
-        res = (
-            sb.table(table_name)
-            .select("presence_stage")
-            .eq("user_id", str(user_id))
-            .order("created_at", desc=True)
-            .limit(1)
-            .execute()
-        )
-        rows = getattr(res, "data", None) or []
-        if not rows:
-            return None
-        v = rows[0].get("presence_stage")
-        if v is None:
-            return None
-        try:
-            return int(v)
-        except Exception:
-            return None
-    except Exception:
-        return None
-
-def fetch_recent_microsteps(
-    limit: int = 25,
-    *,
-    supabase=None,
-    table_name: str = "reflection_memory",
-) -> List[str]:
-    if not _memory_enabled():
-        return []
-
-    try:
-        sb = supabase or _get_supabase_from_agi_db()
-    except Exception:
-        return []
-
-    try:
-        res = (
-            sb.table(table_name)
-            .select("microstep")
-            .order("created_at", desc=True)
-            .limit(int(limit))
-            .execute()
-        )
-        rows = getattr(res, "data", None) or []
-        out: List[str] = []
-        for r in rows:
-            ms = (r.get("microstep") or "").strip()
-            if ms:
-                out.append(ms)
-        return out
-    except Exception:
-        return []
+        return {
+            "enabled": True,
+            "written": False,
+            "error": str(e)[:200],
+            "reason": "insert_failed",
+        }

@@ -2091,6 +2091,25 @@ def generate_deepen_insight(
     # Attach to debug snapshot (safe)
     _last_debug["memdbg"] = mem_rc
 
+    # -------------------------
+    # D2.5) Weekly Presence Snapshot Refresh
+    # -------------------------
+    try:
+        if sb and user_id:
+            from agi.persistence.snapshots import refresh_weekly_presence_snapshot
+
+            rc_snap = refresh_weekly_presence_snapshot(
+                sb,
+                user_id=str(user_id),
+            )
+
+            if os.getenv("AGI_DEBUG") == "1":
+                print("SNAPSHOT DBG:", rc_snap)
+
+    except Exception as e:
+        if os.getenv("AGI_DEBUG") == "1":
+            print("SNAPSHOT DBG: failed:", str(e)[:160])
+
     # Only print in debug mode
     if os.getenv("AGI_DEBUG") == "1":
         print("MEMDBG:", mem_rc)

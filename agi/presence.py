@@ -137,11 +137,14 @@ def update_presence_stage(
 # Reflection_state read/write
 # ----------------------------
 
-def fetch_presence_state(sb, user_id: str) -> Dict[str, Any]:
+def fetch_presence_state(state_row: Dict[str, Any] | None) -> Dict[str, Any]:
     """
-    Reads the persisted presence fields from reflection_state.
-    Returns safe defaults if missing.
+    Pure helper.
+    Takes a reflection_state row dict (or None).
+    Returns normalized presence continuity fields.
+    No database access.
     """
+
     defaults = {
         "last_presence_stage": 0,
         "presence_drift_hits": 0,
@@ -149,58 +152,24 @@ def fetch_presence_state(sb, user_id: str) -> Dict[str, Any]:
         "last_presence_updated_at": None,
     }
 
-    if not (sb and user_id):
+    if not state_row:
         return defaults
 
+    out = {**defaults, **state_row}
+
+    # normalize ints
     try:
-        res = (
-            sb.table("reflection_state")
-              .select("last_presence_stage,presence_drift_hits,last_presence_day,last_presence_updated_at")
-              .eq("user_id", str(user_id))
-              .maybe_single()
-              .execute()
-        )
-        row = getattr(res, "data", None) or {}
-        out = {**defaults, **row}
-        # normalize ints
         out["last_presence_stage"] = int(out.get("last_presence_stage") or 0)
-        out["presence_drift_hits"] = int(out.get("presence_drift_hits") or 0)
-        return out
     except Exception:
-        return defaults
-
-
-def persist_presence_state(
-    sb,
-    user_id: str,
-    *,
-    stage_final: int,
-    drift_hits_new: int,
-    day: str,
-) -> None:
-    """
-    Writes back into reflection_state. Best-effort: never raise to caller.
-    """
-    if not (sb and user_id):
-        return
-
-    payload = {
-        "last_presence_stage": int(stage_final),
-        "presence_drift_hits": int(drift_hits_new),
-        "last_presence_day": day,  # DATE column
-        "last_presence_updated_at": _utc_now().isoformat(),
-        "updated_at": _utc_now().isoformat(),  # keep your general stamp consistent
-    }
+        out["last_presence_stage"] = 0
 
     try:
-        (
-            sb.table("reflection_state")
-              .update(payload)
-              .eq("user_id", str(user_id))
-              .execute()
-        )
+        out["presence_drift_hits"] = int(out.get("presence_drift_hits") or 0)
     except Exception:
-        pass
+        out["presence_drift_hits"] = 0
+
+    return out
+
 
 def tone_copy(*, normal: str, gentle: str, tone: str) -> str:
     return gentle if tone == "gentle" else normal
@@ -286,6 +255,13 @@ def infer_presence_carryover(
     last_reflection_at = _parse_iso(state_row.get("last_reflection_at"))
     last_silenced = bool(state_row.get("last_silenced", False))
 
+        # --- stage carry (safe) ---
+    stage_carry: Optional[int] = None
+    try:
+        stage_carry = int(state_row.get("last_presence_stage") or 0)
+    except Exception:
+        stage_carry = None
+
     # If timestamp missing/unparseable: be conservative + gentle
     if not last_reflection_at:
         return PresenceCarryover(
@@ -314,7 +290,7 @@ def infer_presence_carryover(
         return PresenceCarryover("soft", "gentle", stage_carry, "short_gap")
     return PresenceCarryover("dormant", "gentle", stage_carry, "long_gap")
 
-st.session_state["presence_carry"] = {"tone": "gentle"}
+
 
 def render_presence_widget(phase: str | None = None, hint: str | None = None) -> None:
     tone = (st.session_state.get("presence_carry", {}) or {}).get("tone", "normal")
@@ -365,6 +341,10 @@ def render_presence_section(selected_theme: str, sb) -> None:
 
     # Only show this panel for the Presence theme
     is_presence_theme = selected_theme == "Presence"
+    
+    if "presence_carry" not in st.session_state:
+      st.session_state["presence_carry"] = {"tone": "gentle"}
+
     if not is_presence_theme:
         # We’re not in Presence mode; clear any running session state
         st.session_state["presence_was_on"] = False

@@ -1585,22 +1585,7 @@ def generate_deepen_insight(
         })
 
     # --- Persist presence (D2) ---
-    try:
-        from datetime import datetime, timezone
-        from agi.persistence.state import upsert_presence_state
-
-        day = datetime.now(timezone.utc).date().isoformat()
-        if sb and user_id:
-            upsert_presence_state(
-                sb,
-                user_id=str(user_id),
-                last_presence_stage=presence_stage_final,
-                presence_drift_hits=presence_drift_new,
-                last_presence_day=day,
-            )
-    except Exception as e:
-        if os.getenv("AGI_DEBUG") == "1":
-            print("presence: upsert_presence_state failed:", str(e)[:160])
+    # Option C "single writer":
 
     if silenced:
         stillness = _silence_stillness_for(mood)

@@ -507,24 +507,9 @@ if submitted:
     )
     st.session_state["last_journal_ai"] = ji
 
-    # --- E: Reflection continuity state (per-user, lightweight) ---
-    try:
-        from agi.persistence.state import upsert_reflection_state
-
-        uid = st.session_state.get(S_USER_ID)
-        if uid:
-            upsert_reflection_state(
-                supabase=sb,
-                user_id=str(uid),
-                theme=theme_used,
-                mood=mood_val,
-                microstep=None,  # reflection submit doesn't generate microstep here
-                last_meaningful_action="saved_reflection",
-                increment_reflection_count=True,
-            )
-    except Exception:
-        # best-effort only (never break submit)
-        pass
+    # NOTE: Option C "single writer" — do NOT write reflection_state here.
+    # Reflection_state is synced from E1 events (reflection_memory) after successful insert.
+    # Keep submit lightweight + UI-safe.
 
     st.session_state["just_saved"] = True
     st.success("Reflection saved. Thank you.")

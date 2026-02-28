@@ -732,17 +732,9 @@ def render_microstep_widget(sb, user_id: str) -> None:
     # --- E2 READ: show last continuity state (non-intrusive) ---
     try:
         if sb and user_id:
-            st_row = (
-                sb.table("reflection_state")
-                    .select(
-                        "last_reflection_at,last_theme,last_mood,last_microstep,"
-                        "last_meaningful_action,last_action_at,reflection_count"
-                    )
-                    .eq("user_id", str(user_id))
-                    .maybe_single()
-                    .execute()
-            )
-            state = getattr(st_row, "data", None) or None
+            from agi.persistence.state import fetch_reflection_state
+
+            state = fetch_reflection_state(sb, user_id=str(user_id))
 
             if state:
                 last_ms = (state.get("last_microstep") or "").strip()
@@ -751,8 +743,8 @@ def render_microstep_widget(sb, user_id: str) -> None:
 
                 st.caption(
                     f"Continuity: {last_theme or '—'} • {last_mood or '—'}"
-                    + (f" • last microstep: “{last_ms}”" if last_ms else "")
-            )
+                    + (f' • last microstep: "{last_ms}"' if last_ms else "")
+                )
     except Exception:
         pass
     
@@ -1263,30 +1255,18 @@ def render_mentor_followup(
                         st.session_state["deepen_microstep"] = microstep or ""
 
 
-                        # --- E2: continuity state update (best-effort) ---
+                        # --- E2: continuity state update (Option C: single-writer) ---
+                        # Do NOT write reflection_state here.
+                        # reflection_state is synced from E1 events (reflection_memory) after successful insert
+                        # inside agi/memory.py via sync_reflection_state_from_event().
                         try:
-                            from agi.persistence.state import upsert_reflection_state
-                            
-                            dbg = _get_last_deepen_debug() or {}
-                            is_silence_flag = bool(dbg.get("silenced", False))
-                            silence_reason = dbg.get("silence_reason")
-
-                            upsert_reflection_state(
-                                supabase=sb,
-                                user_id=str(st.session_state.get(S_USER_ID)),
-                                theme=theme_used,
-                                mood=mood,
-                                microstep=(microstep or None),
-                                last_meaningful_action="deepen_microstep",
-                                silenced=is_silence_flag,
-                                silence_reason=silence_reason,
-                            )
-                        except Exception as e:
                             st.session_state["state_dbg"] = {
                                 "enabled": True,
                                 "written": False,
-                                "error": str(e)[:160],
+                                "reason": "option_c_single_writer",
                             }
+                        except Exception:
+                            pass
 
                         # Update cached UI card values
                         st.session_state[res_key] = {

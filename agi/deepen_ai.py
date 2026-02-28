@@ -2069,6 +2069,7 @@ def generate_deepen_insight(
                 silenced=bool(silenced),
                 silence_reason=silence_reason,
                 presence_stage=presence_stage_final,   # ✅ use the actual final var
+                presence_drift_hits_new=presence_drift_new  # ✅ add this
             )
         except Exception as e:
             mem_rc = {"enabled": True, "written": False, "error": str(e)[:160]}

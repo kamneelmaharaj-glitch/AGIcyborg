@@ -239,3 +239,186 @@ def get_presence_prev(
     stage_prev = _safe_int(state_row.get("last_presence_stage"), default_stage)
     drift_prev = _safe_int(state_row.get("presence_drift_hits"), default_drift)
     return stage_prev, drift_prev
+
+# -------------------------------------------------------------------
+# Option C: Coherence (E1 -> E2 single-writer) + Repair
+# -------------------------------------------------------------------
+
+def sync_reflection_state_from_event(
+    supabase,
+    *,
+    user_id: str,
+    # E1 event fields (what you just wrote to reflection_memory)
+    theme: Optional[str],
+    mood: Optional[str],
+    microstep: Optional[str],
+    insight: Optional[str],  # not stored in E2, but kept for possible future
+    silenced: bool,
+    silence_reason: Optional[str],
+    presence_stage_final: Optional[int],
+    presence_drift_hits_new: Optional[int],
+    occurred_at: Optional[datetime] = None,
+    # if you have a notion of "meaningful action", pass it here
+    last_meaningful_action: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Canonical E2 sync.
+
+    Call this ONCE per reflection event, immediately after E1 insert succeeds.
+    This prevents multi-writer drift and guarantees reflection_state is coherent.
+
+    Best-effort: never raises.
+    """
+    if not (supabase and user_id):
+        return {"written": False, "reason": "missing_supabase_or_user"}
+
+    now = _utcnow()
+    occurred_at = occurred_at or now
+
+    # --- Idempotency guard: never rewind state on out-of-order events ---
+    try:
+        cur = (
+            supabase.table("reflection_state")
+            .select("last_reflection_at")
+            .eq("user_id", str(user_id))
+            .maybe_single()
+            .execute()
+        )
+        current_ts = (getattr(cur, "data", None) or {}).get("last_reflection_at")
+        if current_ts:
+            current_dt = datetime.fromisoformat(str(current_ts).replace("Z", "+00:00"))
+            if current_dt.tzinfo is None:
+                current_dt = current_dt.replace(tzinfo=timezone.utc)
+            if occurred_at <= current_dt:
+                return {
+                    "written": False,
+                    "reason": "stale_event_skipped",
+                    "event_at": occurred_at.isoformat(),
+                    "current_at": current_dt.isoformat(),
+                }
+    except Exception:
+        # best-effort only; never block the write if guard can't read
+        pass
+
+    microstep = (microstep or "").strip() or None
+    last_meaningful_action = (last_meaningful_action or "").strip() or None
+
+    payload: Dict[str, Any] = {
+        "user_id": str(user_id),
+        "last_reflection_at": occurred_at.isoformat(),
+        "last_theme": theme,
+        "last_mood": mood,
+        "last_silenced": bool(silenced),
+        "last_silence_reason": silence_reason,
+        "updated_at": now.isoformat(),
+    }
+
+    # Reflection continuity
+    if microstep:
+        payload["last_microstep"] = microstep
+        payload["last_microstep_at"] = occurred_at.isoformat()
+
+    if last_meaningful_action:
+        payload["last_meaningful_action"] = last_meaningful_action
+        payload["last_action_at"] = occurred_at.isoformat()
+
+    # Presence continuity (D2)
+    if presence_stage_final is not None:
+        payload["last_presence_stage"] = _safe_int(presence_stage_final, 0)
+        payload["last_presence_updated_at"] = occurred_at.isoformat()
+        payload["last_presence_day"] = occurred_at.date().isoformat()
+
+    if presence_drift_hits_new is not None:
+        payload["presence_drift_hits"] = _safe_int(presence_drift_hits_new, 0)
+
+    try:
+        res = (
+            supabase.table("reflection_state")
+            .upsert(payload, on_conflict="user_id")
+            .execute()
+        )
+    except Exception as e:
+        return {"written": False, "payload": payload, "error": str(e)[:180]}
+
+    # reflection_count increment (optional, safe)
+    try:
+        supabase.rpc("increment_reflection_count", {"p_user_id": str(user_id)}).execute()
+    except Exception:
+        pass
+
+    return {"written": True, "payload": payload, "data": getattr(res, "data", None)}
+
+
+def rebuild_reflection_state_from_memory(
+    supabase,
+    *,
+    user_id: str,
+    lookback: int = 50,
+    table_name: str = "reflection_memory",
+) -> Dict[str, Any]:
+    """
+    Repair/backfill: rebuild the *current* reflection_state fields
+    from recent reflection_memory rows.
+
+    Use this if you ever suspect drift, or after schema/logic changes.
+    Best-effort: never raises.
+    """
+    if not (supabase and user_id):
+        return {"rebuilt": False, "reason": "missing_supabase_or_user"}
+
+    try:
+        res = (
+            supabase.table(table_name)
+            .select("created_at,theme,mood,microstep,silenced,silence_reason,presence_stage")
+            .eq("user_id", str(user_id))
+            .order("created_at", desc=True)
+            .limit(int(lookback))
+            .execute()
+        )
+        rows = getattr(res, "data", None) or []
+        if not rows:
+            return {"rebuilt": False, "reason": "no_memory_rows"}
+    except Exception as e:
+        return {"rebuilt": False, "reason": "read_failed", "error": str(e)[:180]}
+
+    # Latest event is source-of-truth for "last_*"
+    latest = rows[0] or {}
+    created_at = latest.get("created_at")
+    occurred_at = None
+    if isinstance(created_at, str) and created_at:
+        try:
+            occurred_at = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+            if occurred_at.tzinfo is None:
+                occurred_at = occurred_at.replace(tzinfo=timezone.utc)
+            occurred_at = occurred_at.astimezone(timezone.utc)
+        except Exception:
+            occurred_at = _utcnow()
+    else:
+        occurred_at = _utcnow()
+
+    theme = latest.get("theme")
+    mood = latest.get("mood")
+    microstep = latest.get("microstep")
+    silenced = bool(latest.get("silenced", False))
+    silence_reason = latest.get("silence_reason")
+    presence_stage = latest.get("presence_stage")
+
+    # Drift hits cannot be perfectly reconstructed from E1 unless you also store drift events.
+    # We preserve existing E2 drift_hits if present; otherwise default 0.
+    existing = fetch_reflection_state(supabase, user_id=str(user_id)) or {}
+    drift_hits = _safe_int(existing.get("presence_drift_hits"), 0)
+
+    return sync_reflection_state_from_event(
+        supabase,
+        user_id=str(user_id),
+        theme=theme,
+        mood=mood,
+        microstep=microstep,
+        insight=None,
+        silenced=silenced,
+        silence_reason=silence_reason,
+        presence_stage_final=_safe_int(presence_stage, 0) if presence_stage is not None else None,
+        presence_drift_hits_new=drift_hits,
+        occurred_at=occurred_at,
+        last_meaningful_action=None,
+    ) | {"rebuilt": True, "rows_used": len(rows)}

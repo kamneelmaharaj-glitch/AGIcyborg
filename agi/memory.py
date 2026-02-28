@@ -88,6 +88,7 @@ def record_reflection_memory(
     silenced: bool,
     silence_reason: Optional[str],
     presence_stage: Optional[int] = None,
+    presence_drift_hits_new: Optional[int] = None,
     supabase=None,
     table_name: str = "reflection_memory",
 ) -> Dict[str, Any]:
@@ -151,12 +152,40 @@ def record_reflection_memory(
         res = sb.table(table_name).insert(payload).execute()
         data = getattr(res, "data", None)
         err = getattr(res, "error", None)
+
+        # ✅ Option C: E1 -> E2 coherence (only after successful insert)
+        if (err is None) and data:
+            try:
+                from agi.persistence.state import sync_reflection_state_from_event
+
+                sync_reflection_state_from_event(
+                    sb,
+                    user_id=str(uid),
+                    theme=payload.get("theme"),
+                    mood=payload.get("mood"),
+                    microstep=payload.get("microstep") or "",
+                    insight=payload.get("insight"),
+                    silenced=bool(payload.get("silenced", False)),
+                    silence_reason=payload.get("silence_reason"),
+                    presence_stage_final=payload.get("presence_stage"),
+                    presence_drift_hits_new=presence_drift_hits_new,
+                    occurred_at=None,
+                )
+            except Exception as e:
+                # never block E1; debug only
+                if os.getenv("AGI_DEBUG") == "1":
+                    print("E2 sync_reflection_state_from_event failed:", str(e)[:160])
+
         return {
             "enabled": True,
             "written": bool(data) and (err is None),
             "error": (str(err)[:200] if err else None),
         }
+
     except Exception as e:
+        # NOTE: res may not exist here; don't reference it
+        if os.getenv("AGI_DEBUG") == "1":
+            print("MEM INSERT exception:", str(e)[:160])
         return {
             "enabled": True,
             "written": False,

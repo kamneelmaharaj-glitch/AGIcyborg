@@ -24,11 +24,30 @@ def _first(names: list[str], default=None):
             return v
     return default
 
-def mask(s: Optional[str], head=6, tail=3) -> str:
+def mask(s: Optional[str], *, show_last=4) -> str:
+    """
+    Safe mask for secrets.
+    - Returns '—' if empty
+    - Shows only last N characters (default 4)
+    - Never shows the prefix
+    """
+    if not s:
+        return "—"
+
+    s = str(s).strip()
+    if not s:
+        return "—"
+
+    if len(s) <= show_last:
+        return "set"
+
+    return f"set (…{s[-show_last:]})"
+
+def mask_url(s: Optional[str], head=8, tail=4) -> str:
     if not s:
         return "—"
     s = str(s)
-    if len(s) <= head + tail + 3:
+    if len(s) <= head + tail:
         return s
     return f"{s[:head]}…{s[-tail:]}"
 

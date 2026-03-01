@@ -66,10 +66,10 @@ def infer_presence_stage(
     if hits >= 4:
         return 3, f"embodied_presence_strong(hits={hits},len={len(text)})"
 
-    if hits >= 2:
+    if hits >= 3:
         return 3, f"embodied_presence(hits={hits},len={len(text)})"
 
-    if hits >= 1:
+    if hits >= 2:
         return 2, f"grounded_presence(hits={hits},len={len(text)})"
 
     return 0, f"fragmented_attention(hits={hits},len={len(text)})"

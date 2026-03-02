@@ -35,6 +35,7 @@ from agi.mirror import render_mirror_panel
 from agi.journal_ai import build_journal_insight, render_journal_insight
 from agi.followup import render_mentor_followup, render_microstep_widget, render_today_panel
 from agi.reflection_ui import render_reflection_header
+from agi.debug import render_debug_panel
 
 import os
 
@@ -49,96 +50,6 @@ def _safe_secret_label(v: str | None, *, name: str) -> str:
     if not _is_set(v):
         return f"{name}: —"
     return f"{name}: set ({_last4(v)})"
-
-def _debug_on() -> bool:
-    return (os.getenv("AGI_DEBUG", "0") or "").strip().lower() in ("1", "true", "yes", "on")
-
-def _debug_unlocked() -> bool:
-    # Optional local “second key” so DEBUG never shows by accident
-    return bool(st.session_state.get("debug_unlock", False))
-
-def render_debug_panel(sb):
-    # Gate 1: environment flag
-    if not _debug_on():
-        return
-
-    # Gate 2: session unlock
-    if not _debug_unlocked():
-        with st.sidebar:
-            st.caption("Debug is locked.")
-            if st.button("🔓 Unlock Debug", key="dbg_unlock"):
-                st.session_state["debug_unlock"] = True
-                st.rerun()
-        return  # stop until unlocked
-
-    # Now unlocked
-    uid = st.session_state.get(S_USER_ID)
-    if not uid or not sb:
-        st.sidebar.warning("DEBUG: missing user_id or supabase client")
-        return
-
-    with st.sidebar.expander("🛠️ Debug", expanded=False):
-
-        # Optional lock button
-        if st.button("🔒 Lock Debug", key="dbg_lock"):
-            st.session_state["debug_unlock"] = False
-            st.rerun()
-
-        col1, col2 = st.columns([1, 1])
-        with col1:
-            if st.button("🔄 Refresh state", key="dbg_refresh"):
-                st.rerun()
-
-        with col2:
-            if st.button("🧪 Clear cache", key="dbg_clear_cache"):
-                try:
-                    st.cache_data.clear()
-                except Exception:
-                    pass
-                try:
-                    st.cache_resource.clear()
-                except Exception:
-                    pass
-                st.rerun()
-
-        st.write("user_id:", str(uid))
-
-    # --- E2 reflection_state ---
-    try:
-        from agi.persistence.state import fetch_reflection_state
-        st_row = fetch_reflection_state(sb, user_id=str(uid)) or {}
-    except Exception as e:
-        st_row = {}
-        st.error(f"E2 fetch error: {str(e)[:160]}")
-
-    st.subheader("E2 reflection_state")
-    st.json({
-        "last_reflection_at": st_row.get("last_reflection_at"),
-        "last_theme": st_row.get("last_theme"),
-        "last_mood": st_row.get("last_mood"),
-        "last_microstep": st_row.get("last_microstep"),
-        "last_presence_stage": st_row.get("last_presence_stage"),
-        "presence_drift_hits": st_row.get("presence_drift_hits"),
-        "last_presence_day": st_row.get("last_presence_day"),
-        "last_presence_updated_at": st_row.get("last_presence_updated_at"),
-    })
-
-    # --- E1 reflection_memory ---
-    st.subheader("E1 last 5 reflection_memory")
-    try:
-        res = (
-            sb.table("reflection_memory")
-            .select("created_at,theme,mood,presence_stage,microstep,silenced")
-            .eq("user_id", str(uid))
-            .order("created_at", desc=True)
-            .limit(5)
-            .execute()
-        )
-        rows = getattr(res, "data", None) or []
-        st.table(rows)
-    except Exception as e:
-        st.error(f"E1 fetch error: {str(e)[:160]}")
-    
 
 # ----------------------------
 # Boot

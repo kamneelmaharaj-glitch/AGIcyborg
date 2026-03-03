@@ -255,7 +255,7 @@ def render_today_panel(sb, user_id) -> None:
         # -------------------------
         # DEBUG (only when AGI_DEBUG=1)
         # -------------------------
-        if os.getenv("AGI_DEBUG") == "1":
+        if os.getenv("AGI_DEBUG") == "1" and st.session_state.get("debug_unlock"):
             pc = st.session_state.get("presence_carry") or {}
             st.caption(
                 f"Presence carry-over: {pc.get('freshness','dormant')} · "

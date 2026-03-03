@@ -71,7 +71,7 @@ def render_debug_panel(sb) -> None:
         st.write("user_id:", str(uid))
 
         st.subheader("Config (masked)")
-        st.write("URL:", mask(SUPABASE_URL))
+        st.write("Backend:", "Connected" if SUPABASE_URL else "Not configured")
         st.write("Anon key:", "set" if SUPABASE_ANON_KEY else "—")
         st.write("Service key:", "set" if SUPABASE_SERVICE_KEY else "—")
         st.write("OpenAI key:", "set" if OPENAI_API_KEY else "—")

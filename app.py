@@ -194,8 +194,6 @@ st.session_state["current_prompt_id"] = selected_prompt_id
 # ----------------------------
 # Today’s micro-step card
 # ----------------------------
-render_today_panel(sb, user_id)
-
 
 selected = prompts[sel_idx]
 selected_prompt_id = str(selected["id"])
@@ -300,13 +298,18 @@ if st.session_state.get("_request_clear_reflection"):
     st.session_state["mood"] = ""
     st.session_state["stillness_note"] = ""
 
+# --- Today (subtle + collapsed) ---
+with st.expander("Today", expanded=False):
+    render_today_panel(sb, user_id)
+
 # ----------------------------
 # Reflection Form
 # ----------------------------
-render_reflection_header(
-    selected_theme,
-    selected.get("prompt", ""),
-)
+with st.expander("Prompt", expanded=False):
+    render_reflection_header(
+        selected_theme,
+        selected.get("prompt", ""),
+    )
 
 # Ensure the logical key exists
 if "reflection_text" not in st.session_state:
@@ -366,7 +369,7 @@ with st.form("reflect_form", clear_on_submit=False):
         # SINGLE source of truth: key="reflection_text"
         reflection_text = st.text_area(
             "Reflection",  # must be non-empty
-            height=180,
+            height=260,
             placeholder="Write honestly. Small and true is enough.",
             key="reflection_text",
             label_visibility="collapsed",
@@ -382,9 +385,9 @@ with st.form("reflect_form", clear_on_submit=False):
     # Buttons inside the form
     col_submit, col_clear = st.columns([4, 1])
     with col_submit:
-        submitted = st.form_submit_button("Submit")
+        submitted = st.form_submit_button("Save Reflection")
     with col_clear:
-        cleared = st.form_submit_button("Clear", type="secondary")
+        cleared = st.form_submit_button("Begin Again", type="secondary")
 
 # ---- Clear handler ----
 if cleared:
@@ -587,6 +590,7 @@ if last_id and last_reflection:
         reflection_text=last_reflection,
         row_id=str(last_id),  # ensures DB linkage + unique widget keys
     )
+
 # ----------------------------
 # Theme patterns (last 3–5 reflections)
 # ----------------------------
@@ -681,18 +685,20 @@ theme_for_patterns = (
     or selected_theme
 )
 
-render_theme_patterns(sb, user_id, theme_for_patterns)
+with st.expander("Subtle Patterns", expanded=False):
+    render_theme_patterns(sb, user_id, theme_for_patterns)
 
 # ----------------------------
 # Regenerate guidance
 # ----------------------------
 st.markdown("---")
-st.subheader("✨ Refine Mentor Guidance")
+with st.expander("Refine Guidance", expanded=False):
+    # entire regen block
 
-theme_for_regen = (
-    st.session_state.get("last_theme")
-    or st.session_state.get("current_theme")
-    or selected_theme
+    theme_for_regen = (
+        st.session_state.get("last_theme")
+        or st.session_state.get("current_theme")
+        or selected_theme
 )
 
 regen_reflection = st.text_area(
@@ -739,5 +745,6 @@ if st.session_state.get("regen_insight") or st.session_state.get("regen_mantra")
 # ----------------------------
 # Energy + History (use the SAME filters)
 # ----------------------------
-render_energy_section(sb, days=flt_days, theme=flt_theme)
-render_recent_reflections(sb, days=flt_days, theme=flt_theme)
+with st.expander("Energy & Reflection History", expanded=False):
+    render_energy_section(sb, days=flt_days, theme=flt_theme)
+    render_recent_reflections(sb, days=flt_days, theme=flt_theme)

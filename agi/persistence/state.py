@@ -256,7 +256,7 @@ def sync_reflection_state_from_event(
     silenced: bool,
     silence_reason: Optional[str],
     presence_stage_final: Optional[int],
-    presence_drift_hits_new: Optional[int],
+    presence_drift_hits_new: Optional[int] = None,
     occurred_at: Optional[datetime] = None,
     # if you have a notion of "meaningful action", pass it here
     last_meaningful_action: Optional[str] = None,
@@ -403,10 +403,9 @@ def rebuild_reflection_state_from_memory(
     silence_reason = latest.get("silence_reason")
     presence_stage = latest.get("presence_stage")
 
-    # Drift hits cannot be perfectly reconstructed from E1 unless you also store drift events.
-    # We preserve existing E2 drift_hits if present; otherwise default 0.
+    # Drift hits cannot be reconstructed from E1
+    # Preserve existing E2 value by NOT incrementing during rebuild
     existing = fetch_reflection_state(supabase, user_id=str(user_id)) or {}
-    drift_hits = _safe_int(existing.get("presence_drift_hits"), 0)
 
     return sync_reflection_state_from_event(
         supabase,
@@ -418,7 +417,7 @@ def rebuild_reflection_state_from_memory(
         silenced=silenced,
         silence_reason=silence_reason,
         presence_stage_final=_safe_int(presence_stage, 0) if presence_stage is not None else None,
-        presence_drift_hits_new=drift_hits,
+        presence_drift_hits_new=0,
         occurred_at=occurred_at,
         last_meaningful_action=None,
     ) | {"rebuilt": True, "rows_used": len(rows)}

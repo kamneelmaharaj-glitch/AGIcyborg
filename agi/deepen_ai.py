@@ -28,7 +28,6 @@ import os
 import re
 from agi.silence_contract import should_silence
 from agi.utils import resolve_microstep_source, resolve_microstep_dominance
-from agi.persistence.state import upsert_reflection_state
 
 from agi.memory import record_reflection_memory
 

@@ -130,6 +130,7 @@ def record_reflection_memory(
         "theme": (theme or "Reflection").strip() or "Reflection",
         "mood": (mood or "soft").strip() or "soft",
         "presence_stage": presence_stage,
+        "presence_drift_hits_new": int(presence_drift_hits_new or 0),
         # IMPORTANT: always NOT NULL
         "microstep": _clip(ms, 220) if ms is not None else "",
         "microstep_norm": _clip(ms_norm, 220) if ms_norm is not None else "",
@@ -158,6 +159,12 @@ def record_reflection_memory(
             try:
                 from agi.persistence.state import sync_reflection_state_from_event
 
+                occurred_at = None
+                try:
+                    occurred_at = data[0].get("created_at")
+                except Exception:
+                    occurred_at = None
+
                 sync_reflection_state_from_event(
                     sb,
                     user_id=str(uid),
@@ -168,11 +175,10 @@ def record_reflection_memory(
                     silenced=bool(payload.get("silenced", False)),
                     silence_reason=payload.get("silence_reason"),
                     presence_stage_final=payload.get("presence_stage"),
-                    presence_drift_hits_new=presence_drift_hits_new,
-                    occurred_at=None,
+                    presence_drift_hits_new=payload.get("presence_drift_hits_new", 0),
+                    occurred_at=occurred_at,
                 )
             except Exception as e:
-                # never block E1; debug only
                 if os.getenv("AGI_DEBUG") == "1":
                     print("E2 sync_reflection_state_from_event failed:", str(e)[:160])
 

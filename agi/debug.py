@@ -103,7 +103,7 @@ def render_debug_panel(sb) -> None:
     try:
         res = (
             sb.table("reflection_memory")
-            .select("created_at,theme,mood,presence_stage,microstep,silenced")
+            .select("created_at,theme,mood,presence_stage,presence_drift_hits_new,microstep,silenced")
             .eq("user_id", str(uid))
             .order("created_at", desc=True)
             .limit(5)

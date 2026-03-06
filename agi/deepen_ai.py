@@ -2048,6 +2048,10 @@ def generate_deepen_insight(
     
     print("🧠 E1 memory write reached")
     presence_stage = presence_stage_final
+
+    drift_new = int(presence_drift_new or 0)
+    print("DRIFT PIPELINE TEST:", drift_new)
+
     # -------------------------
     # E1) Memory write (record-only, non-intrusive)
     # -------------------------
@@ -2060,6 +2064,8 @@ def generate_deepen_insight(
             # Import locally to avoid circular imports at module load time
             from agi.memory import record_reflection_memory
 
+            print("DRIFT PIPELINE TEST:", drift_new)
+
             mem_rc = record_reflection_memory(
                 theme=theme_label,                     # use normalized label
                 mood=mood,
@@ -2068,7 +2074,7 @@ def generate_deepen_insight(
                 silenced=bool(silenced),
                 silence_reason=silence_reason,
                 presence_stage=presence_stage_final,   # ✅ use the actual final var
-                presence_drift_hits_new=presence_drift_new  # ✅ add this
+                presence_drift_hits_new=drift_new,  # ✅ add this
             )
         except Exception as e:
             mem_rc = {"enabled": True, "written": False, "error": str(e)[:160]}

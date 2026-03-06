@@ -275,6 +275,16 @@ def sync_reflection_state_from_event(
     now = _utcnow()
     occurred_at = occurred_at or now
 
+    # Coerce occurred_at if caller passed a string
+    if isinstance(occurred_at, str):
+        try:
+            occurred_at = datetime.fromisoformat(occurred_at.replace("Z", "+00:00"))
+            if occurred_at.tzinfo is None:
+                occurred_at = occurred_at.replace(tzinfo=timezone.utc)
+            occurred_at = occurred_at.astimezone(timezone.utc)
+        except Exception:
+            occurred_at = now
+
     # --- Idempotency guard: never rewind state on out-of-order events ---
     try:
         cur = (
@@ -329,7 +339,22 @@ def sync_reflection_state_from_event(
         payload["last_presence_day"] = occurred_at.date().isoformat()
 
     if presence_drift_hits_new is not None:
-        payload["presence_drift_hits"] = _safe_int(presence_drift_hits_new, 0)
+        # cumulative: existing_hits + new_delta
+        prev_hits = 0
+        try:
+            cur2 = (
+                supabase.table("reflection_state")
+                .select("presence_drift_hits")
+                .eq("user_id", str(user_id))
+                .maybe_single()
+                .execute()
+            )
+            prev_hits = _safe_int((getattr(cur2, "data", None) or {}).get("presence_drift_hits"), 0)
+        except Exception:
+            prev_hits = 0
+
+        new_delta = _safe_int(presence_drift_hits_new, 0)
+        payload["presence_drift_hits"] = prev_hits + new_delta
 
     try:
         res = (
@@ -406,6 +431,9 @@ def rebuild_reflection_state_from_memory(
     # Drift hits cannot be reconstructed from E1
     # Preserve existing E2 value by NOT incrementing during rebuild
     existing = fetch_reflection_state(supabase, user_id=str(user_id)) or {}
+    
+    existing = fetch_reflection_state(supabase, user_id=str(user_id)) or {}
+    drift_hits = _safe_int(existing.get("presence_drift_hits"), 0)
 
     return sync_reflection_state_from_event(
         supabase,
@@ -417,7 +445,7 @@ def rebuild_reflection_state_from_memory(
         silenced=silenced,
         silence_reason=silence_reason,
         presence_stage_final=_safe_int(presence_stage, 0) if presence_stage is not None else None,
-        presence_drift_hits_new=0,
+        presence_drift_hits_new=drift_hits,   # ✅ preserve, don’t reset
         occurred_at=occurred_at,
         last_meaningful_action=None,
     ) | {"rebuilt": True, "rows_used": len(rows)}

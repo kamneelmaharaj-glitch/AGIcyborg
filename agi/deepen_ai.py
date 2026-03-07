@@ -23,6 +23,7 @@ from typing import List, Tuple, Optional, Dict, Any
 
 from agi.mood import detect_mood
 from agi.rhythm import infer_response_mode
+from agi.dharma import infer_practice_phase
 
 import streamlit as st
 import os
@@ -1597,6 +1598,18 @@ def generate_deepen_insight(
             "mode": response_mode
         })
 
+    # --- Dharma phase inference (practice readiness) ---
+    practice_phase = infer_practice_phase(
+        presence_stage=presence_stage_final,
+        drift_hits=(presence_drift_prev or 0) + (presence_drift_new or 0),
+        silenced=bool(silenced),
+        response_mode=response_mode,
+    )
+
+    if os.getenv("AGI_DEBUG") == "1":
+        print("DHARMA DBG:", {
+            "practice_phase": practice_phase
+        })
     # --- Persist presence (D2) ---
     # Option C "single writer":
 
@@ -1767,12 +1780,24 @@ def generate_deepen_insight(
     )
 
     # -------------------------
-    # Fallback microstep
+    # Fallback microstep (Rhythm-aware)
     # -------------------------
     if not (microstep or "").strip():
-        microstep = THEME_FALLBACK_MICROSTEP.get(theme_label, THEME_FALLBACK_MICROSTEP["Clarity"])
+
+        if response_mode == "grounding":
+            microstep = "Take three slow breaths and feel the air move through your body."
+
+        elif response_mode == "gentle":
+            microstep = "Take one slow breath and let your shoulders soften."
+
+        else:
+            microstep = THEME_FALLBACK_MICROSTEP.get(
+                theme_label,
+                THEME_FALLBACK_MICROSTEP["Clarity"],
+            )
+
         used_fallback = True
-        _dp("microstep=fallback")
+        _dp("microstep=fallback_rhythm")
 
     # -------------------------
     # 6) Theme shaping (A.3)

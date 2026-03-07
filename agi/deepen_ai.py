@@ -22,6 +22,7 @@ from typing import List, Tuple, Optional, Dict, Any
 
 
 from agi.mood import detect_mood
+from agi.rhythm import infer_response_mode
 
 import streamlit as st
 import os
@@ -1583,6 +1584,19 @@ def generate_deepen_insight(
             "reason": presence_reason,
         })
 
+    # --- Rhythm intelligence (tiny seed) ---
+    response_mode = infer_response_mode(
+        presence_stage=presence_stage_final,
+        drift_hits=(presence_drift_prev or 0) + (presence_drift_new or 0),
+        silenced=bool(silenced),
+        mood=mood,
+    )
+
+    if os.getenv("AGI_DEBUG") == "1":
+        print("RHYTHM DBG:", {
+            "mode": response_mode
+        })
+
     # --- Persist presence (D2) ---
     # Option C "single writer":
 
@@ -2047,7 +2061,6 @@ def generate_deepen_insight(
     )
     
     print("🧠 E1 memory write reached")
-    presence_stage = presence_stage_final
 
     drift_new = int(presence_drift_new or 0)
     print("DRIFT PIPELINE TEST:", drift_new)
@@ -2063,8 +2076,6 @@ def generate_deepen_insight(
         try:
             # Import locally to avoid circular imports at module load time
             from agi.memory import record_reflection_memory
-
-            print("DRIFT PIPELINE TEST:", drift_new)
 
             mem_rc = record_reflection_memory(
                 theme=theme_label,                     # use normalized label

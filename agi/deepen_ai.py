@@ -23,7 +23,7 @@ from typing import List, Tuple, Optional, Dict, Any
 
 from agi.mood import detect_mood
 from agi.rhythm import infer_response_mode
-from agi.dharma import infer_practice_phase
+from agi.dharma import infer_practice_phase, preferred_microstep_category
 
 import streamlit as st
 import os
@@ -1100,7 +1100,7 @@ _CATEGORY_FALLBACK_POOL: Dict[str, list[str]] = {
         "Close one open tab.",
     ],
     "breath": [
-        "Place one hand on your abdomen.",
+        "Notice the breath entering the nose.",
         "Count one slow breath silently.",
         "Exhale once through your nose.",
         "Feel one breath in your belly.",
@@ -1231,6 +1231,7 @@ def _compose_prompt(
     theme: str,
     reflection_text: str,
     followup_note: str,
+    practice_phase: Optional[str],
     recent_followups: Optional[List[str]] = None,
 ) -> str:
     """
@@ -1305,6 +1306,7 @@ def _compose_prompt(
         f"{safety_instruction}\n\n"
         "Context:\n"
         f"- Theme: {theme_label}\n"
+        f"- Practice phase: {practice_phase}\n"
         f"- Reflection tail: {tail_line or '—'}\n"
         f"- Recent follow-ups: {history}\n\n"
         "User reflection:\n"
@@ -1641,7 +1643,13 @@ def generate_deepen_insight(
     # -------------------------
     tail_line = _extract_tail_line(reflection_text or "—")
     stillness = _select_stillness_note(theme_label, tail_line)
-    prompt = _compose_prompt(theme_label, reflection_text, followup_note, recent_followups)
+    prompt = _compose_prompt(
+        theme_label,
+        reflection_text,
+        followup_note,
+        practice_phase,
+        recent_followups
+    )
 
     # -------------------------
     # 2) Safe model call (lazy import, circular-safe)
@@ -1780,24 +1788,12 @@ def generate_deepen_insight(
     )
 
     # -------------------------
-    # Fallback microstep (Rhythm-aware)
+    # Fallback microstep (Dharma-aware, category-safe)
     # -------------------------
     if not (microstep or "").strip():
-
-        if response_mode == "grounding":
-            microstep = "Take three slow breaths and feel the air move through your body."
-
-        elif response_mode == "gentle":
-            microstep = "Take one slow breath and let your shoulders soften."
-
-        else:
-            microstep = THEME_FALLBACK_MICROSTEP.get(
-                theme_label,
-                THEME_FALLBACK_MICROSTEP["Clarity"],
-            )
-
         used_fallback = True
-        _dp("microstep=fallback_rhythm")
+        _dp("microstep=fallback_dharma")
+    
 
     # -------------------------
     # 6) Theme shaping (A.3)
@@ -1821,7 +1817,13 @@ def generate_deepen_insight(
             semantic_category = cat
             break
 
-    base_category = semantic_category or _select_microstep_category(theme_label, tail_line)
+    # --- Dharma bias for microstep category ---
+    preferred_cat = preferred_microstep_category(practice_phase)
+
+    base_category = semantic_category or preferred_cat or _select_microstep_category(
+        theme_label, tail_line
+    )
+
     chosen_category = base_category
 
     dbg["category_selected_by"] = "semantic" if semantic_category else "hash"
@@ -2073,6 +2075,9 @@ def generate_deepen_insight(
         "repeat_hit": bool(dbg.get("repeat_hit", False)),
         "repeat_action": (dbg.get("repeat_action") or ""),
         "repeat_match": (dbg.get("repeat_match") or ""),
+
+        "practice_phase": practice_phase,
+        "response_mode": response_mode,
     })
 
     _attach_presence_debug(

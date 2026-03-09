@@ -29,7 +29,7 @@ from agi.mentor import render_mentor_card
 from agi.energy import compute_energy_score, compute_presence_score
 from agi.export import build_reflection_markdown
 from agi.charts import render_energy_section
-from agi.history import render_recent_reflections
+from agi.history import render_recent_reflections, render_presence_continuity
 from agi.ui import inject_global_css
 from agi.mirror import render_mirror_panel
 from agi.journal_ai import build_journal_insight, render_journal_insight
@@ -747,4 +747,5 @@ if st.session_state.get("regen_insight") or st.session_state.get("regen_mantra")
 # ----------------------------
 with st.expander("Energy & Reflection History", expanded=False):
     render_energy_section(sb, days=flt_days, theme=flt_theme)
+    render_presence_continuity(sb, limit=7)
     render_recent_reflections(sb, days=flt_days, theme=flt_theme)

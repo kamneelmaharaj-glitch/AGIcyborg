@@ -73,7 +73,33 @@ def _fetch_reflections_window(
         st.caption(f"Reflection history unavailable: {e}")
         return []
 
+def _fetch_presence_memory_window(
+    sb,
+    user_id: str,
+    *,
+    limit: int = 7,
+) -> List[Dict]:
+    """
+    Load recent reflection_memory rows for this user, newest first.
+    Used for presence continuity visualization.
+    """
+    if not (sb and user_id):
+        return []
 
+    try:
+        res = (
+            sb.table("reflection_memory")
+              .select("created_at, presence_stage, presence_drift_hits_new, mood, theme")
+              .eq("user_id", user_id)
+              .order("created_at", desc=True)
+              .limit(limit)
+              .execute()
+        )
+        return res.data or []
+    except Exception as e:  # pragma: no cover
+        st.caption(f"Presence continuity unavailable: {e}")
+        return []
+    
 # ---------- UI helpers ----------
 
 def _group_by_date(rows: List[Dict]) -> Dict[str, List[Dict]]:
@@ -164,7 +190,76 @@ def _render_reflection_card(row: Dict) -> None:
         else:
             st.caption("_(No reflection text saved.)_")
 
+def _presence_stage_label(stage: Optional[int]) -> str:
+    try:
+        s = int(stage)
+    except Exception:
+        return "—"
 
+    mapping = {
+        0: "Fragmented",
+        1: "Low",
+        2: "Steady",
+        3: "Strong",
+    }
+    return mapping.get(s, str(s))
+
+
+def _presence_stage_bar(stage: Optional[int]) -> str:
+    """
+    Tiny text bar for stage 0–3.
+    """
+    try:
+        s = max(0, min(3, int(stage)))
+    except Exception:
+        s = 0
+    return "●" * (s + 1) + "○" * (3 - s)
+
+
+def render_presence_continuity(
+    sb,
+    *,
+    limit: int = 7,
+) -> None:
+    """
+    Gentle recent presence visualization from reflection_memory.
+    Shows the latest N reflection events, oldest → newest.
+    """
+    user_id = st.session_state.get(S_USER_ID)
+    if not user_id:
+        return
+
+    rows = _fetch_presence_memory_window(sb, user_id, limit=limit)
+    if not rows:
+        return
+
+    rows = list(reversed(rows))  # oldest -> newest for readable continuity
+
+    st.markdown("### 🌿 Presence continuity")
+    st.caption("A gentle view of your recent presence rhythm.")
+
+    for row in rows:
+        when = _fmt_when(row.get("created_at"))
+        stage = row.get("presence_stage")
+        drift_new = row.get("presence_drift_hits_new", 0)
+
+        c1, c2, c3 = st.columns([2, 2, 1])
+        with c1:
+            st.caption(when)
+        with c2:
+            st.caption(f"{_presence_stage_bar(stage)}  {_presence_stage_label(stage)}")
+        with c3:
+            try:
+                drift_val = int(drift_new or 0)
+            except Exception:
+                drift_val = 0
+            if drift_val > 0:
+                st.caption(f"drift +{drift_val}")
+            else:
+                st.caption("")
+
+    st.markdown("---")
+    
 # ---------- Public API ----------
 
 def render_recent_reflections(

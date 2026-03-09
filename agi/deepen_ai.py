@@ -1608,9 +1608,24 @@ def generate_deepen_insight(
         response_mode=response_mode,
     )
 
+    # --- Protective Drift Recovery Mode ---
+    drift_total = (presence_drift_prev or 0) + (presence_drift_new or 0)
+
+    recovery_mode = (
+        presence_stage_final <= 1
+        and drift_total >= 2
+    )
+
     if os.getenv("AGI_DEBUG") == "1":
         print("DHARMA DBG:", {
             "practice_phase": practice_phase
+        })
+
+    if os.getenv("AGI_DEBUG") == "1":
+        print("RECOVERY DBG:", {
+            "recovery_mode": recovery_mode,
+            "presence_stage": presence_stage_final,
+            "drift_total": drift_total,
         })
     # --- Persist presence (D2) ---
     # Option C "single writer":
@@ -1819,6 +1834,10 @@ def generate_deepen_insight(
 
     # --- Dharma bias for microstep category ---
     preferred_cat = preferred_microstep_category(practice_phase)
+
+    # Protective recovery bias
+    if recovery_mode:
+        preferred_cat = "touch"
 
     base_category = semantic_category or preferred_cat or _select_microstep_category(
         theme_label, tail_line
@@ -2054,6 +2073,8 @@ def generate_deepen_insight(
         "presence_stage_prev": presence_stage_prev,
         "presence_stage_today": presence_stage_today,
         "presence_stage_final": presence_stage_final,
+        "recovery_mode": recovery_mode,
+        "drift_total": drift_total,
         "presence_stage_label": presence_stage_label(presence_stage_final),
         "presence_reason": presence_reason,
         "presence_drift_hits_prev": presence_drift_prev,

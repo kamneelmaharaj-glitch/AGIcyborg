@@ -28,8 +28,10 @@ from agi.dharma import infer_practice_phase, preferred_microstep_category
 import streamlit as st
 import os
 import re
+import random
 from agi.silence_contract import should_silence
 from agi.utils import resolve_microstep_source, resolve_microstep_dominance
+from agi.recovery import infer_recovery_mode
 
 from agi.memory import record_reflection_memory
 
@@ -1232,6 +1234,7 @@ def _compose_prompt(
     reflection_text: str,
     followup_note: str,
     practice_phase: Optional[str],
+    chosen_category: str,
     recent_followups: Optional[List[str]] = None,
 ) -> str:
     """
@@ -1276,9 +1279,11 @@ def _compose_prompt(
     else:
         safety_instruction = "No therapy, no diagnosis, no complex advice."
 
-    # Category selection (A.8)
-    category = _select_microstep_category(theme_label, tail_line)
+    # --- Category selection (A.8) ---
+
+    category = chosen_category
     category_hint = (MICROSTEP_HINTS.get(category, "") or "").strip()
+
 
     # Hard format + microstep contract (keep short and unambiguous)
     microstep_rules = (
@@ -1612,8 +1617,8 @@ def generate_deepen_insight(
     drift_total = (presence_drift_prev or 0) + (presence_drift_new or 0)
 
     recovery_mode = (
-        presence_stage_final <= 1
-        and drift_total >= 2
+        presence_stage_final == 0
+        or drift_total >= 2
     )
 
     if os.getenv("AGI_DEBUG") == "1":
@@ -1627,6 +1632,12 @@ def generate_deepen_insight(
             "presence_stage": presence_stage_final,
             "drift_total": drift_total,
         })
+    tail_line = _extract_tail_line(reflection_text or "—")
+
+    if recovery_mode:
+        prompt_category = random.choice(["breath", "touch", "posture"])
+    else:
+        prompt_category = _select_microstep_category(theme_label, tail_line)
     # --- Persist presence (D2) ---
     # Option C "single writer":
 
@@ -1656,15 +1667,17 @@ def generate_deepen_insight(
     # -------------------------
     # Normal path continues
     # -------------------------
-    tail_line = _extract_tail_line(reflection_text or "—")
+    
     stillness = _select_stillness_note(theme_label, tail_line)
     prompt = _compose_prompt(
         theme_label,
         reflection_text,
         followup_note,
         practice_phase,
-        recent_followups
+        prompt_category,
+        recent_followups,
     )
+      
 
     # -------------------------
     # 2) Safe model call (lazy import, circular-safe)

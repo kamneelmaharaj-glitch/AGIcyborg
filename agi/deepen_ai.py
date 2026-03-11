@@ -34,6 +34,7 @@ from agi.utils import resolve_microstep_source, resolve_microstep_dominance
 from agi.recovery import infer_recovery_mode
 
 from agi.memory import record_reflection_memory
+from agi.mentor_tone import infer_mentor_tone
 
 from agi.threads.presence_thread import (
     infer_presence_stage,
@@ -1235,6 +1236,7 @@ def _compose_prompt(
     followup_note: str,
     practice_phase: Optional[str],
     chosen_category: str,
+    mentor_tone: Optional[str],
     recent_followups: Optional[List[str]] = None,
 ) -> str:
     """
@@ -1261,6 +1263,15 @@ def _compose_prompt(
     history = " • ".join(h.strip() for h in reversed(history_items) if h and h.strip()) or "—"
 
     tone_block = (THEME_TONES.get(theme_label, "") or "").strip()
+
+    mentor_tone_guidance = {
+        "grounding": "Keep the insight very simple, stabilizing, and body-aware. Prefer calm, immediate language.",
+        "gentle": "Use a soft, supportive, and non-pressuring tone. Keep the language light and reassuring without advice.",
+        "reflective": "Offer a thoughtful, grounded reflective tone. Stay clear and concise.",
+        "contemplative": "Allow slightly deeper reflection, but remain calm, brief, and non-directive.",
+    }
+
+    tone_hint = (mentor_tone_guidance.get((mentor_tone or "").strip(), "") or "").strip()
 
     # Safety flag (A.7) — keep, but don’t over-trigger
     unsafe = False
@@ -1308,6 +1319,7 @@ def _compose_prompt(
     return (
         f"{SYSTEM_PRIMER}\n"
         f"{tone_block}\n"
+        f"Mentor tone guidance: {tone_hint}\n"
         f"{safety_instruction}\n\n"
         "Context:\n"
         f"- Theme: {theme_label}\n"
@@ -1632,6 +1644,19 @@ def generate_deepen_insight(
             "presence_stage": presence_stage_final,
             "drift_total": drift_total,
         })
+    
+    # --- Mentor tone inference ---
+
+    mentor_tone = infer_mentor_tone(
+        presence_stage_final,
+        recovery_mode,
+        practice_phase,
+        response_mode,
+    )
+
+    if os.getenv("AGI_DEBUG") == "1":
+        print("MENTOR TONE DBG:", {"tone": mentor_tone})
+
     tail_line = _extract_tail_line(reflection_text or "—")
 
     if recovery_mode:
@@ -1675,6 +1700,7 @@ def generate_deepen_insight(
         followup_note,
         practice_phase,
         prompt_category,
+        mentor_tone,
         recent_followups,
     )
       

@@ -1657,6 +1657,16 @@ def generate_deepen_insight(
     if os.getenv("AGI_DEBUG") == "1":
         print("MENTOR TONE DBG:", {"tone": mentor_tone})
 
+    if os.getenv("AGI_DEBUG") == "1":
+        print(
+            "STATE DBG:",
+            f"presence={presence_stage_final} | "
+            f"rhythm={response_mode} | "
+            f"phase={practice_phase} | "
+            f"recovery={recovery_mode} | "
+            f"tone={mentor_tone}"
+    )
+
     tail_line = _extract_tail_line(reflection_text or "—")
 
     if recovery_mode:

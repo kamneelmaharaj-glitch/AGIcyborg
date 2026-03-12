@@ -17,6 +17,12 @@ _DRIFT_WORDS = (
     "can't focus", "cannot focus", "hard to focus",
 )
 
+_STABILITY_WORDS = (
+    "steady", "balanced", "calm", "settled",
+    "clear", "centered", "content", "stable",
+    "grounded", "okay", "ok", "at ease",
+)
+
 # Presence stages (0-4)
 # 0 Disconnection, 1 Return, 2 Steady, 3 Witness, 4 Abide
 UPLIFT_MOODS = {"clear", "focused", "tender", "hopeful", "soft"}
@@ -48,6 +54,7 @@ def infer_presence_stage(
 
     hits = sum(1 for w in _PRESENCE_WORDS if w in text)
     drift = sum(1 for w in _DRIFT_WORDS if w in text)
+    stability = sum(1 for w in _STABILITY_WORDS if w in text)
 
     # If drift is explicitly present, it should dominate a weak presence hit.
     # (This prevents "I’m distracted but I want to return to breath" from being misread as grounded.)
@@ -71,6 +78,15 @@ def infer_presence_stage(
 
     if hits >= 2:
         return 2, f"grounded_presence(hits={hits},len={len(text)})"
+    
+    if stability >= 2:
+        return 2, f"stability_language_strong(stability={stability},presence={hits},len={len(text)})"
+
+    if stability >= 1 and hits >= 1:
+        return 2, f"stability_language(stability={stability},presence={hits},len={len(text)})"
+
+    if stability >= 1 and drift == 0:
+        return 2, f"steady_affect(stability={stability},presence={hits},len={len(text)})"
 
     return 0, f"fragmented_attention(hits={hits},len={len(text)})"
 

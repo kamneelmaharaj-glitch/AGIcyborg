@@ -32,6 +32,7 @@ import random
 from agi.silence_contract import should_silence
 from agi.utils import resolve_microstep_source, resolve_microstep_dominance
 from agi.recovery import infer_recovery_mode
+from agi.microstep_validator import is_valid_microstep
 
 from agi.memory import record_reflection_memory
 from agi.mentor_tone import infer_mentor_tone
@@ -1820,6 +1821,11 @@ def generate_deepen_insight(
     category_adjusted = False
     microstep_reused = False
     repeat_avoided = False
+
+    if not is_valid_microstep(microstep):
+        if os.getenv("AGI_DEBUG") == "1":
+            print("MICROSTEP DBG:", {"rejected": microstep})
+        microstep = "Pause and notice one sensation in your body."
 
     # -------------------------
     # 4) Theme fallback if empty

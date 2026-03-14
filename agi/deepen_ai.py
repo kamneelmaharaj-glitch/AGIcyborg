@@ -33,6 +33,7 @@ from agi.silence_contract import should_silence
 from agi.utils import resolve_microstep_source, resolve_microstep_dominance
 from agi.recovery import infer_recovery_mode
 from agi.microstep_validator import is_valid_microstep
+from agi.insight_validator import validate_insight
 
 from agi.memory import record_reflection_memory
 from agi.mentor_tone import infer_mentor_tone
@@ -1847,6 +1848,16 @@ def generate_deepen_insight(
         insight = before_insight
         insight_tone_adjusted = False
 
+    validated_before = insight
+    insight = validate_insight(insight, mentor_tone)
+
+    if os.getenv("AGI_DEBUG") == "1" and insight != validated_before:
+        print("INSIGHT DBG:", {
+            "validated_from": validated_before,
+            "validated_to": insight,
+            "tone": mentor_tone,
+        })
+        
     # -------------------------
     # 6) Theme shaping
     # -------------------------

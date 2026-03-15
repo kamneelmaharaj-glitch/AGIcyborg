@@ -34,6 +34,7 @@ from agi.utils import resolve_microstep_source, resolve_microstep_dominance
 from agi.recovery import infer_recovery_mode
 from agi.microstep_validator import is_valid_microstep
 from agi.insight_validator import validate_insight
+from agi.mirror_layer import generate_mirror
 
 from agi.memory import record_reflection_memory
 from agi.mentor_tone import infer_mentor_tone
@@ -1669,6 +1670,12 @@ def generate_deepen_insight(
             f"tone={mentor_tone}"
     )
 
+    # --- Mirror Layer ---
+    mirror_line = generate_mirror(reflection_text, mood, presence_stage_final)
+
+    if os.getenv("AGI_DEBUG") == "1":
+        print("MIRROR DBG:", mirror_line)
+
     tail_line = _extract_tail_line(reflection_text or "—")
 
     if recovery_mode:
@@ -1857,7 +1864,7 @@ def generate_deepen_insight(
             "validated_to": insight,
             "tone": mentor_tone,
         })
-        
+
     # -------------------------
     # 6) Theme shaping
     # -------------------------

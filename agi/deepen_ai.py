@@ -35,6 +35,7 @@ from agi.recovery import infer_recovery_mode
 from agi.microstep_validator import is_valid_microstep
 from agi.insight_validator import validate_insight
 from agi.mirror_layer import generate_mirror
+from agi.mirror_question import generate_mirror_question
 
 from agi.memory import record_reflection_memory
 from agi.mentor_tone import infer_mentor_tone
@@ -1675,6 +1676,15 @@ def generate_deepen_insight(
 
     if os.getenv("AGI_DEBUG") == "1":
         print("MIRROR DBG:", mirror_line)
+
+    mirror_question = generate_mirror_question(
+        reflection_text,
+        mood,
+        presence_stage_final,
+    )
+
+    if os.getenv("AGI_DEBUG") == "1":
+        print("MIRROR QUESTION DBG:", mirror_question)
 
     tail_line = _extract_tail_line(reflection_text or "—")
 

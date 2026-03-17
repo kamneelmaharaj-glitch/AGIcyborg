@@ -615,6 +615,7 @@ def _remove_stale_openers(theme_label: str, mood: str, text: str) -> str:
         return t2.strip()
 
     return t
+
 # -------------------------------------------------------------------
 # Theme tones (prompt-only nudges)
 # -------------------------------------------------------------------
@@ -934,6 +935,33 @@ def _reduce_to_single_action(step: str) -> str:
     s = s.rstrip(".")  # don’t force punctuation; UI doesn’t need it
     return s
 
+def compose_reflection_response(
+    *,
+    mirror_line: str | None,
+    mirror_question: str | None,
+    insight: str | None,
+    microstep: str | None,
+) -> str:
+    """
+    Compose the final reflection response in deterministic order.
+
+    Order:
+        1) Mirror
+        2) Mirror Question
+        3) Insight
+        4) Microstep
+
+    Empty parts are skipped.
+    """
+
+    parts: List[str] = []
+
+    for part in (mirror_line, mirror_question, insight, microstep):
+        text = (part or "").strip()
+        if text:
+            parts.append(text)
+
+    return "\n\n".join(parts)
 
 def _recent_microsteps(recent_followups: List[str], window: int = 3) -> List[str]:
     """
@@ -1532,6 +1560,9 @@ def generate_deepen_insight(
     raw_second = ""
     model_error = ""
     model_rate_limited = False
+    mirror_line = ""
+    mirror_question = ""
+    response_text = ""
 
     _last_debug["silenced"] = bool(silenced)
     _last_debug["silence_reason"] = silence_reason
@@ -2084,6 +2115,13 @@ def generate_deepen_insight(
     if model_rate_limited and insight_source == "fallback":
         insight_source = "fallback_due_to_rate_limit"
 
+        response_text = compose_reflection_response(
+            mirror_line=mirror_line,
+            mirror_question=mirror_question,
+            insight=insight,
+            microstep=microstep,
+        )
+
     # -------------------------
     # 12.5) Resolve attribution (FINAL, ONCE)
     # -------------------------
@@ -2135,6 +2173,9 @@ def generate_deepen_insight(
         "final_insight": insight,
         "final_microstep": microstep,
         "pre_category_microstep": pre_category_microstep,
+        "mirror_line": mirror_line,
+        "mirror_question": mirror_question,
+        "response_text": response_text,
 
         "insight_source": insight_source,
         "microstep_source": microstep_source,

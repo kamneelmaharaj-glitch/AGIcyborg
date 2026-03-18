@@ -935,10 +935,34 @@ def _reduce_to_single_action(step: str) -> str:
     s = s.rstrip(".")  # don’t force punctuation; UI doesn’t need it
     return s
 
+def maybe_add_memory_echo(
+    *,
+    mood: str,
+    presence_stage: int,
+) -> Optional[str]:
+    """
+    Very light memory-awareness seed.
+
+    Intentionally deterministic and conservative.
+    Only appears in steadier states where it will not feel intrusive.
+    """
+
+    mood_norm = (mood or "").strip().lower()
+    stage = int(presence_stage or 0)
+
+    if stage >= 2 and mood_norm in {"clear", "focused", "soft"}:
+        return "You’ve noticed something like this before."
+
+    if stage >= 2 and mood_norm in {"drained", "tender"}:
+        return "There may be a familiar rhythm here."
+
+    return None
+
 def compose_reflection_response(
     *,
     mirror_line: str | None,
     mirror_question: str | None,
+    memory_echo: str | None,
     insight: str | None,
     microstep: str | None,
 ) -> str:
@@ -956,7 +980,7 @@ def compose_reflection_response(
 
     parts: List[str] = []
 
-    for part in (mirror_line, mirror_question, insight, microstep):
+    for part in (mirror_line, mirror_question, memory_echo, insight, microstep):
         text = (part or "").strip()
         if text:
             parts.append(text)
@@ -1562,6 +1586,7 @@ def generate_deepen_insight(
     model_rate_limited = False
     mirror_line = ""
     mirror_question = ""
+    memory_echo = ""
     response_text = ""
 
     _last_debug["silenced"] = bool(silenced)
@@ -1716,6 +1741,14 @@ def generate_deepen_insight(
 
     if os.getenv("AGI_DEBUG") == "1":
         print("MIRROR QUESTION DBG:", mirror_question)
+
+    memory_echo = maybe_add_memory_echo(
+        mood=mood,
+        presence_stage=presence_stage_final,
+    )
+
+    if os.getenv("AGI_DEBUG") == "1":
+        print("MEMORY ECHO DBG:", memory_echo)
 
     tail_line = _extract_tail_line(reflection_text or "—")
 
@@ -2118,6 +2151,7 @@ def generate_deepen_insight(
         response_text = compose_reflection_response(
             mirror_line=mirror_line,
             mirror_question=mirror_question,
+            memory_echo=memory_echo,
             insight=insight,
             microstep=microstep,
         )
@@ -2175,6 +2209,7 @@ def generate_deepen_insight(
         "pre_category_microstep": pre_category_microstep,
         "mirror_line": mirror_line,
         "mirror_question": mirror_question,
+        "memory_echo": memory_echo,
         "response_text": response_text,
 
         "insight_source": insight_source,

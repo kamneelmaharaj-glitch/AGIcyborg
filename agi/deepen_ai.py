@@ -940,21 +940,30 @@ def maybe_add_memory_echo(
     mood: str,
     presence_stage: int,
 ) -> Optional[str]:
-    """
-    Very light memory-awareness seed.
-
-    Intentionally deterministic and conservative.
-    Only appears in steadier states where it will not feel intrusive.
-    """
 
     mood_norm = (mood or "").strip().lower()
     stage = int(presence_stage or 0)
 
-    if stage >= 2 and mood_norm in {"clear", "focused", "soft"}:
-        return "You’ve noticed something like this before."
+    if stage < 2:
+        return None
 
-    if stage >= 2 and mood_norm in {"drained", "tender"}:
-        return "There may be a familiar rhythm here."
+    # Deterministic variation (no randomness)
+    options_stable = [
+        "You’ve noticed something like this before.",
+        "There may be a familiar rhythm here.",
+        "There’s a quiet sense of familiarity in this.",
+    ]
+
+    options_soft = [
+        "This feels like something you've touched before.",
+        "You may have been here before, in a subtle way.",
+    ]
+
+    if mood_norm in {"clear", "focused"}:
+        return options_stable[stage % len(options_stable)]
+
+    if mood_norm in {"drained", "soft", "tender"}:
+        return options_soft[stage % len(options_soft)]
 
     return None
 

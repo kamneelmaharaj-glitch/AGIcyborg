@@ -337,7 +337,7 @@ def _run_case(i: int, case: dict) -> tuple[bool, dict]:
     print("Note preview   :", shorten(note.replace("\n", " "), width=120, placeholder="…"))
     print("-" * 90)
 
-    stillness, insight, microstep = generate_deepen_insight(
+    stillness, insight, microstep, response_text= generate_deepen_insight(
         theme=theme,
         reflection_text=reflection,
         followup_note=note,

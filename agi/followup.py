@@ -938,15 +938,17 @@ def _save_followup_ai(
         st.error("DB client or user_id missing when saving follow-up.")
         return False
 
+    theme_safe = (theme or "Reflection").strip() or "Reflection"
+
     payload = {
         "user_id": user_id,
         "reflection_id": reflection_id,
-        "theme": theme,
+        "theme": theme_safe,
         "followup_note": note,
         "insight": insight,
         "microstep": microstep,
         "meta": {"source": "deepen", "model": "mentor-ai"},
-        "created_at": _iso_utc(),  # ensure non-null created_at
+        "created_at": _iso_utc(),
     }
 
     try:
@@ -1007,68 +1009,44 @@ silenced_flag = bool(dbg.get("silenced", False))
 
 def _render_ai_card(
     theme: str,
-    insight: str,
-    microstep: str,
+    response_text: str,
     dbg: Optional[dict] = None,
 ) -> None:
     dbg = dbg or {}
+
     is_silence_flag = bool(dbg.get("silenced", False))
+    presence_freshness = dbg.get("presence_freshness")
+    is_dormant = presence_freshness == "dormant"
 
-    # Silence-specific copy
-    silence_insight = "No words needed. Let the body settle."
-    silence_microstep = "Sit upright for ten seconds. Feel one point of contact. Let one exhale pass."
-
-    # Badge (must be defined BEFORE st.markdown f-string)
     silence_badge = (
         '<span class="silence-pill">Silence</span>'
         if is_silence_flag else ""
     )
 
     silence_subcaption = (
-    '<div class="silence-subcaption">Stillness is active.</div>'
-    if is_silence_flag else ""
+        '<div class="silence-subcaption">Stillness is active.</div>'
+        if is_silence_flag else ""
     )
 
     theme_safe = (theme or "Reflection").strip() or "Reflection"
-
-    dbg = dbg or {}
-
-    is_silenced = bool(dbg.get("silenced", False))
-    presence_freshness = dbg.get("presence_freshness")  # inferred upstream
-    is_dormant = presence_freshness == "dormant"
-
     EMPTY_STATE_COPY = "Nothing to add right now. You can stay here."
 
-    insight_clean = (insight or "").strip()
-    microstep_clean = (microstep or "").strip()
+    response_clean = (response_text or "").strip()
 
-    # Presence-aware empty state (Silence OR Dormant) + no content
-    if (is_silenced or is_dormant) and (not insight_clean) and (not microstep_clean):
-        display_insight = EMPTY_STATE_COPY
-        display_microstep = ""
+    if (is_silence_flag or is_dormant) and not response_clean:
+        display_text = EMPTY_STATE_COPY
     else:
-    # Silence mode still overrides when active (first-class)
-        display_insight = silence_insight if is_silence_flag else (
-            insight_clean
-            or "Once you save a deepen note for this reflection, your distilled insight will appear here."
-        )
+        display_text = response_clean or "Once you save a deepen note, your reflection response will appear here."
 
-        display_microstep = silence_microstep if is_silence_flag else (
-            microstep_clean
-            or "A tiny 2-minute action will be suggested here, based on today’s note."
-        )
-
-    # Section label shifts tone on silence days
-    insight_label = "STILLNESS" if is_silence_flag else "INSIGHT"
-
-    
     theme_block = (
-    f'<div class="deepen-ai-card-theme">{theme_safe}</div>'
-    if not is_silence_flag else ""
+        f'<div class="deepen-ai-card-theme">{theme_safe}</div>'
+        if not is_silence_flag else ""
     )
 
+    display_html = display_text.replace("\n", "<br><br>")
+
     st.markdown(
-    f"""
+        f"""
 <div class="deepen-ai-card theme-{theme_safe}">
   <div class="deepen-ai-card-header">
     DEEPEN MENTOR
@@ -1078,15 +1056,12 @@ def _render_ai_card(
 
   {theme_block}
 
-  <div class="deepen-ai-card-section-label">{insight_label}</div>
-  <p>{display_insight}</p>
-
-  <div class="deepen-ai-card-section-label">MICRO-STEP</div>
-  <p>{display_microstep}</p>
+  <div class="deepen-ai-card-section-label">REFLECTION</div>
+  <p>{display_html}</p>
 </div>
 """,
-    unsafe_allow_html=True,
-)
+        unsafe_allow_html=True,
+    )
 # ---------------------------------------------------------------------------
 # Public API — Deepen main panel
 # ---------------------------------------------------------------------------
@@ -1142,11 +1117,25 @@ def render_mentor_followup(
 
     # Initialise session store for this scope, and hydrate from DB on first load
     if res_key not in st.session_state:
-        st.session_state[res_key] = {"insight": "", "microstep": ""}
+        st.session_state[res_key] = {
+            "insight": "",
+            "microstep": "",
+            "response_text": "",
+        }
 
         stored_db = _load_latest_followup_ai(sb, user_id, row_id, selected_theme)
         if stored_db:
-            st.session_state[res_key] = stored_db
+            st.session_state[res_key] = {
+                "insight": stored_db.get("insight", ""),
+                "microstep": stored_db.get("microstep", ""),
+                "response_text": compose_reflection_response(
+                    mirror_line="",
+                    mirror_question="",
+                    memory_echo="",
+                    insight=stored_db.get("insight", ""),
+                    microstep=stored_db.get("microstep", ""),
+                ),
+            }
 
     box = st.container(border=True)
     with box:
@@ -1195,7 +1184,7 @@ def render_mentor_followup(
             )
 
             # --- Defaults so we never hit UnboundLocalError ---
-            stillness, insight, microstep = "", "", ""
+            stillness, insight, microstep, response_text = "", "", "", ""
             dbg = {}
             mood = "soft"
             silenced_flag = False
@@ -1228,13 +1217,20 @@ def render_mentor_followup(
                         # 3) Generate Deepen output (theme_used = selected_theme is our single truth)
                         theme_used = (selected_theme or "Clarity").strip() or "Clarity"
 
-                        stillness, insight, microstep = generate_deepen_insight(
+                        stillness, insight, microstep, response_text= generate_deepen_insight(
                             theme=theme_used,
                             reflection_text=reflection_text,
                             followup_note=note,
                             recent_followups=recent,
                         )
-
+                        
+                        print("FOLLOWUP UI DBG:", {
+                            "stillness": stillness,
+                            "insight": insight,
+                            "microstep": microstep,
+                            "response_text": response_text,
+                        })
+                        
                         # --- Deepen debug: silence gate inspection (single source of truth) ---
                         dbg = _get_last_deepen_debug() or {}
                         silenced_flag = bool(dbg.get("silenced", False))
@@ -1272,6 +1268,7 @@ def render_mentor_followup(
                         st.session_state[res_key] = {
                             "insight": insight or "",
                             "microstep": microstep or "",
+                            "response_text": response_text or "",
                         }
 
                     except Exception as e:
@@ -1322,6 +1319,7 @@ def render_mentor_followup(
 
     with right:
         stored = st.session_state.get(res_key, {})
+        response_text = (stored.get("response_text") or "").strip()
 
         # single source of truth: always pull latest debug right before render
         dbg = _get_last_deepen_debug() or {}
@@ -1333,10 +1331,9 @@ def render_mentor_followup(
         )
 
         _render_ai_card(
-            selected_theme,
-            stored.get("insight", ""),
-            stored.get("microstep", ""),
-            dbg=dbg,  # <-- critical
+            theme,
+            response_text,
+            dbg=dbg
         )
 
         # ----- Analytics strip (theme-aware) -----

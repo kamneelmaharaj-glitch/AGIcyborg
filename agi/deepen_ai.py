@@ -1445,14 +1445,17 @@ def _silence_stillness_for(mood: str) -> str:
 
 def _silence_output(*, mood: str) -> tuple[str, None, str]:
     """
-    IMPORTANT: Always return (stillness, insight, microstep).
+    IMPORTANT: Always return (stillness, insight, microstep, response_text).
     For silence contract: insight must be None (by contract),
     microstep should be a gentle default microstep string.
     """
     stillness = _silence_stillness_for(mood)
     insight = None
     microstep = "Return to one calm breath."
-    return stillness, insight, microstep
+
+    response_text = f"{stillness}\n\n{microstep}"
+
+    return stillness, insight, microstep, response_text
 
 def _return_silence_contract(
     *,
@@ -1465,7 +1468,7 @@ def _return_silence_contract(
     dbg: dict,
     # optional presence debug bundle (pass if you have it at that point)
     presence_payload: Optional[dict] = None,
-) -> Tuple[str, Optional[str], str]:
+) -> Tuple[str, Optional[str], str, str]:
     """
     Single silence return contract for ALL silence exits.
     Always returns (stillness, insight=None, microstep="").
@@ -1492,7 +1495,13 @@ def _return_silence_contract(
         payload.update(presence_payload)
 
     _last_debug.update(payload)
-    return stillness, insight, microstep
+    stillness = _silence_stillness_for(mood)
+    insight = None
+    microstep = "Return to one calm breath."
+
+    response_text = f"{stillness}\n\n{microstep}"
+
+    return stillness, insight, microstep, response_text
 
 # -------------------------------------------------------------------
 # Public API
@@ -2157,13 +2166,13 @@ def generate_deepen_insight(
     if model_rate_limited and insight_source == "fallback":
         insight_source = "fallback_due_to_rate_limit"
 
-        response_text = compose_reflection_response(
-            mirror_line=mirror_line,
-            mirror_question=mirror_question,
-            memory_echo=memory_echo,
-            insight=insight,
-            microstep=microstep,
-        )
+    response_text = compose_reflection_response(
+        mirror_line=mirror_line,
+        mirror_question=mirror_question,
+        memory_echo=memory_echo,
+        insight=insight,
+        microstep=microstep,
+    )
 
     # -------------------------
     # 12.5) Resolve attribution (FINAL, ONCE)
@@ -2335,4 +2344,4 @@ def generate_deepen_insight(
     if os.getenv("AGI_DEBUG") == "1":
         print("MEMDBG:", mem_rc)
 
-    return stillness, insight, microstep
+    return stillness, insight, microstep, response_text

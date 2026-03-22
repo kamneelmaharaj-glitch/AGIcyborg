@@ -1043,7 +1043,7 @@ def _render_ai_card(
         if not is_silence_flag else ""
     )
 
-    display_html = display_text.replace("\n", "<br><br>")
+    display_html = display_text.replace("\n\n", "<br><br>").replace("\n", "<br>")
 
     st.markdown(
         f"""

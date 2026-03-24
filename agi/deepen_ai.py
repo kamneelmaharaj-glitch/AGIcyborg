@@ -987,12 +987,18 @@ def compose_reflection_response(
     Empty parts are skipped.
     """
 
-    parts: List[str] = []
+    parts = []
 
-    for part in (mirror_line, mirror_question, memory_echo, insight, microstep):
-        text = (part or "").strip()
-        if text:
-            parts.append(text)
+    for part in (mirror_line, mirror_question, memory_echo):
+        if part:
+            parts.append(part.strip())
+
+    if insight:
+        parts.append("—")
+        parts.append(insight.strip())
+
+    if microstep:
+        parts.append(microstep.strip())
 
     return "\n\n".join(parts)
 

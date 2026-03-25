@@ -54,7 +54,7 @@ def generate_mirror(reflection_text: str, mood: str, presence_stage: int) -> str
 
     prefix = PREFIXES[presence_stage % len(PREFIXES)]
 
-    mirror = f"{prefix} {core.lower()}."
+    mirror = f"{prefix} {core.lower()} in you."
 
     mirror = _normalize(mirror)
 

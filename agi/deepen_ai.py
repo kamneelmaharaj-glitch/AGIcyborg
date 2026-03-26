@@ -825,7 +825,7 @@ THEME_FALLBACK_MICROSTEP: Dict[str, str] = {
     "Discipline": "Clear one small space in front of you.",
     "Devotion":   "Place your palms together for ten seconds as a quiet offering.",
     "Surrender":  "Write one line naming what you cannot control today.",
-    "Calm-Sage":  "Sit upright for ten seconds.",
+    "Calm-Sage":  "Sit upright and notice the body for a moment.",
 }
 
 THEME_FALLBACK_INSIGHT: Dict[str, str] = {
@@ -1150,7 +1150,7 @@ def _shape_microstep_for_theme(theme_label: str, microstep: str) -> str:
 
 _CATEGORY_FALLBACK_POOL: Dict[str, list[str]] = {
     "posture": [
-        "Sit upright for ten seconds.",
+        "Sit upright and notice the body for a moment.",
         "Set both feet flat on the floor.",
         "Relax your shoulders once.",
         "Place both hands on your thighs.",
@@ -1174,7 +1174,7 @@ _CATEGORY_FALLBACK_POOL: Dict[str, list[str]] = {
         "Close one open tab.",
     ],
     "breath": [
-        "Notice the breath entering the nose.",
+        "Notice the breath as it enters the nose.",
         "Count one slow breath silently.",
         "Exhale once through your nose.",
         "Feel one breath in your belly.",

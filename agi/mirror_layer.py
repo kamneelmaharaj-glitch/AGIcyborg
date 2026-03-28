@@ -39,7 +39,7 @@ def generate_mirror(reflection_text: str, mood: str, presence_stage: int) -> str
 
     reflection = _normalize(reflection_text)
     if not reflection:
-        return "You noticed something worth pausing with."
+        return "Something here feels worth pausing with."
 
     core = _extract_core(reflection)
 
@@ -48,13 +48,18 @@ def generate_mirror(reflection_text: str, mood: str, presence_stage: int) -> str
     if "steady" in low:
         return "There was a sense of steadiness."
     if "balanced" in low:
-        return "You noticed a feeling of balance."
+        return "There was a feeling of balance."
     if "calm" in low:
         return "There was a sense of calm present."
 
     prefix = PREFIXES[presence_stage % len(PREFIXES)]
 
-    mirror = f"{prefix} {core.lower()} in you."
+    core_clean = core.strip()
+
+    if core_clean.lower().startswith(("felt", "feel")):
+        mirror = "It " + core_clean.lower() + "."
+    else:
+        mirror = f"{prefix} {core_clean.lower()}."
 
     mirror = _normalize(mirror)
 

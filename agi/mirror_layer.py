@@ -55,11 +55,17 @@ def generate_mirror(reflection_text: str, mood: str, presence_stage: int) -> str
     prefix = PREFIXES[presence_stage % len(PREFIXES)]
 
     core_clean = core.strip()
+    low = core_clean.lower()
 
-    if core_clean.lower().startswith(("felt", "feel")):
-        mirror = "It " + core_clean.lower() + "."
+    if low.startswith(("it ", "there ", "felt", "feel", "was", "were")):
+        # already a natural sentence → use directly
+        if low.startswith(("felt", "feel")):
+            mirror = "It " + low + "."
+        else:
+            mirror = core_clean.capitalize() + "."
     else:
-        mirror = f"{prefix} {core_clean.lower()}."
+        prefix = PREFIXES[presence_stage % len(PREFIXES)]
+        mirror = f"{prefix} {low}."
 
     mirror = _normalize(mirror)
 

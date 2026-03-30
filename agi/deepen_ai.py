@@ -994,7 +994,6 @@ def compose_reflection_response(
             parts.append(part.strip())
 
     if insight:
-        parts.append("—")
         parts.append(insight.strip())
 
     if microstep:

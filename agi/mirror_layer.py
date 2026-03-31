@@ -27,7 +27,7 @@ def _extract_core(reflection: str) -> str:
     core = parts[0].strip()
 
     # remove leading filler
-    core = re.sub(r"^(today|i|i felt|i noticed|i think)\s+", "", core, flags=re.I)
+    core = re.sub(r"^(i felt|i noticed|i think|today|i)\s+", "", core, flags=re.I)
 
     return core
 
@@ -68,6 +68,13 @@ def generate_mirror(reflection_text: str, mood: str, presence_stage: int) -> str
         mirror = f"{prefix} {low}."
 
     mirror = _normalize(mirror)
+
+    # light human-readable capitalization cleanup
+    mirror = mirror.replace(" i ", " I ")
+    mirror = mirror.replace(" i'", " I'")
+
+    if mirror:
+        mirror = mirror[0].upper() + mirror[1:]
 
     # enforce length
     if len(mirror) > MAX_MIRROR_CHARS:

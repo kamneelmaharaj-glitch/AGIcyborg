@@ -40,7 +40,7 @@ def generate_mirror_question(
 
     # Default gentle reflection
     else:
-        q = "What felt most noticeable in that moment?"
+        q = "What stood out most in that moment?"
 
     q = _normalize(q)
 

@@ -81,10 +81,10 @@ def _silence_output(*, mood: str) -> tuple[str, str | None, str]:
 
     if mood in ("overwhelmed", "heavy"):
         stillness = "This moment is being held."
-        microstep = "Place one hand on your chest."
+        microstep = "One hand resting on the chest."
     elif mood in ("drained", "tender"):
         stillness = "You are already here."
-        microstep = "Place one hand on your chest."
+        microstep = "One hand resting on the chest."
     else:
         stillness = "Nothing is missing here."
         microstep = "Sit upright for ten seconds."
@@ -819,7 +819,7 @@ THEME_FALLBACK_MICROSTEP: Dict[str, str] = {
     "Presence":   "Place one hand on your abdomen.",
     "Clarity":    "Write one honest sentence about what is most true right now.",
     "Courage":    "Send one short message you have been avoiding.",
-    "Compassion": "Place one hand on your chest.",
+    "Compassion": "One hand resting on the chest.",
     "Purpose":    "Write one sentence naming what matters most today.",
     "Balance":    "Pause for ten seconds before your next task.",
     "Discipline": "Clear one small space in front of you.",
@@ -1047,7 +1047,7 @@ def _fallback_microstep_for_category(
     """
     pool = _CATEGORY_FALLBACK_POOL.get(category) or []
     if not pool:
-        return "Place one hand on your chest."
+        return "One hand resting on the chest."
 
     ex_norm = _normalize_step(exclude) if exclude else ""
     recent_steps = _recent_microsteps(recent_followups or [], window=window)
@@ -1150,12 +1150,12 @@ def _shape_microstep_for_theme(theme_label: str, microstep: str) -> str:
 _CATEGORY_FALLBACK_POOL: Dict[str, list[str]] = {
     "posture": [
         "Sit upright and notice the body for a moment.",
-        "Set both feet flat on the floor.",
+        "Feet flat on the floor.",
         "Relax your shoulders once.",
         "Place both hands on your thighs.",
     ],
     "touch": [
-        "Place one hand on your chest.",
+        "One hand resting on the chest.",
         "Rest one hand gently on your forearm.",
         "Press your palms together once.",
         "Place one hand on your abdomen.",
@@ -1215,7 +1215,7 @@ def _cycle_fallback_for_category(
     pool = _CATEGORY_FALLBACK_POOL.get(category) or []
     if not pool:
         meta["picked_reason"] = "empty_pool_default"
-        return "Place one hand on your chest.", meta
+        return "One hand resting on the chest.", meta
 
     recent = _recent_microsteps(recent_followups or [], window=window)
     recent_norm = {_normalize_step(x) for x in recent if (x or "").strip()}
@@ -2120,7 +2120,7 @@ def generate_deepen_insight(
         or (not _starts_with_allowed_verb_titlecase(microstep))
         or _looks_multi_step(microstep)
     ):
-        microstep = "Place one hand on your chest."
+        microstep = "One hand resting on the chest."
         used_fallback = True
         guardrail_adjusted = True
         _dp("hard_safe=fired")

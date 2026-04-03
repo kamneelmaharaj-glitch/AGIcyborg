@@ -86,7 +86,7 @@ def _silence_output(*, mood: str) -> tuple[str, str | None, str]:
         stillness = "You are already here."
         microstep = "One hand resting on the chest."
     else:
-        stillness = "Nothing is missing here."
+        stillness = "Nothing missing here."
         microstep = "Sit upright for ten seconds."
 
     return stillness, None, microstep
@@ -143,7 +143,7 @@ def _select_stillness_note(theme: str, tail_line: str) -> str:
     theme_pool = STILLNESS_NOTES.get(theme, [])
     pool = theme_pool if theme_pool else STILLNESS_NOTES.get("universal", [])
     if not pool:
-        return "Nothing is missing here."
+        return "Nothing missing here."
 
     seed = f"stillness:{theme}:{tail_line}".encode("utf-8")
     n = int(hashlib.sha256(seed).hexdigest(), 16)
@@ -750,7 +750,7 @@ def _theme_signature_strength(theme_label: str, insight: str) -> tuple[str, int]
 
 STILLNESS_NOTES = {
     "universal": [
-        "Nothing is missing here.",
+        "Nothing missing here.",
         "The moment is your teacher.",
         "You are already here.",
     ],

@@ -11,8 +11,10 @@ PREFIXES = (
     "You became aware",
 )
 
+
 def _normalize(text: str) -> str:
     return re.sub(r"\s+", " ", (text or "").strip())
+
 
 def _extract_core(reflection: str) -> str:
     if not reflection:
@@ -21,7 +23,13 @@ def _extract_core(reflection: str) -> str:
     parts = re.split(r"[.!?]", reflection)
     core = parts[0].strip()
 
-    core = re.sub(r"^(i feel|i felt|i noticed|i think|today|i)\s+", "", core, flags=re.I)
+    # remove leading filler, longest matches first
+    core = re.sub(
+        r"^(i feel|i felt|i noticed|i think|today|i)\s+",
+        "",
+        core,
+        flags=re.I,
+    )
 
     return core
 
@@ -32,18 +40,40 @@ def generate_mirror(reflection_text: str, mood: str, presence_stage: int) -> str
         return "Something here feels worth pausing with."
 
     core = _extract_core(reflection)
-    low = (reflection_text or "").lower()
-
-    if "steady" in low:
-        return "There was a sense of steadiness."
-    if "balanced" in low:
-        return "There was a feeling of balance."
-    if "calm" in low:
-        return "There was a sense of calm present."
-
+    reflection_low = reflection.lower()
     core_clean = core.strip()
     low = core_clean.lower()
 
+    # ------------------------------------------------------------------
+    # Stable direct mappings (keep these first)
+    # ------------------------------------------------------------------
+    if "steady" in reflection_low:
+        return "There was a sense of steadiness."
+    if "balanced" in reflection_low:
+        return "There was a feeling of balance."
+    if "calm" in reflection_low:
+        return "There was a sense of calm present."
+
+    # ------------------------------------------------------------------
+    # Semantic mappings for common emotional / situational states
+    # These keep the mirror natural instead of producing awkward fragments.
+    # ------------------------------------------------------------------
+    if "overwhelmed" in reflection_low:
+        return "You noticed a sense of overwhelm today." if "today" in reflection_low else "You noticed a sense of overwhelm."
+    if re.search(r"\bhurt\b", reflection_low):
+        return "There was a sense of hurt."
+    if re.search(r"\bavoiding\b|\bavoid\b", reflection_low):
+        return "There was a sense of avoidance."
+    if (
+        "can't control" in reflection_low
+        or "can’t control" in reflection_low
+        or "cannot control" in reflection_low
+    ):
+        return "You noticed a sense of lack of control."
+
+    # ------------------------------------------------------------------
+    # Natural sentence handling
+    # ------------------------------------------------------------------
     if low.startswith(("it ", "there ", "was ", "were ")):
         mirror = core_clean.capitalize() + "."
     elif low.startswith("felt "):
@@ -52,6 +82,8 @@ def generate_mirror(reflection_text: str, mood: str, presence_stage: int) -> str
         mirror = "Feeling " + low[len("feel "):] + "."
     else:
         prefix = PREFIXES[presence_stage % len(PREFIXES)]
+
+        # states/adjectives that need soft framing
         if low.endswith("ed today") or low.endswith("ed"):
             sense_text = low
             if sense_text.startswith("overwhelmed"):
@@ -70,7 +102,7 @@ def generate_mirror(reflection_text: str, mood: str, presence_stage: int) -> str
 
     if len(mirror) > MAX_MIRROR_CHARS:
         mirror = mirror[:MAX_MIRROR_CHARS].rstrip(" ,;:-")
-        if mirror[-1] not in ".!?":
+        if mirror and mirror[-1] not in ".!?":
             mirror += "."
 
     return mirror

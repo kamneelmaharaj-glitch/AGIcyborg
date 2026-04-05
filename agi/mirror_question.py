@@ -36,11 +36,11 @@ def generate_mirror_question(
         q = "What helped you notice that drift?"
 
     elif "overwhelmed" in reflection:
-        q = "What felt most present within that overwhelm?"
+        q = "What feels a little clearer within that overwhelm?"
 
     # Default gentle reflection
     else:
-        q = "What stood out most in that moment?"
+        q = "What feels a little clearer now?"
 
     q = _normalize(q)
 

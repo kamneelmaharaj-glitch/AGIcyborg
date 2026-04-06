@@ -1159,11 +1159,15 @@ def render_mentor_followup(
             "Deepen Mentor will mirror it back into a tiny action for today."
         )
 
+        
         # Context tail line (last line of reflection)
+        
         last_line = (reflection_text or "").strip().splitlines()[-1:] or [""]
         if last_line and last_line[0]:
             st.caption(f"Last note: “{last_line[0]}”")
             st.markdown("<div style='margin-top:-0.1rem'></div>", unsafe_allow_html=True)
+
+        last_note = last_line[0] if last_line and last_line[0] else ""
 
         left, right = st.columns([3, 1], gap="large")
 
@@ -1222,6 +1226,7 @@ def render_mentor_followup(
                             reflection_text=reflection_text,
                             followup_note=note,
                             recent_followups=recent,
+                            last_note=last_note,
                         )
                         
                         print("FOLLOWUP UI DBG:", {

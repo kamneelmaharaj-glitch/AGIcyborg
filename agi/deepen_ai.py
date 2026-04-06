@@ -1517,6 +1517,7 @@ def generate_deepen_insight(
     reflection_text: str,
     followup_note: str,
     recent_followups: Optional[List[str]] = None,
+    last_note: Optional[str] = None,
 ) -> Tuple[str, Optional[str], str]:
     """
     Final pipeline (SEALED):
@@ -1547,6 +1548,8 @@ def generate_deepen_insight(
     # Normalize inputs (single source of truth)
     reflection_text = (reflection_text or "").strip()
     followup_note = (followup_note or "").strip()
+    last_note = (last_note or "").strip()
+
 
     # One norm_text used everywhere (mood, bias, debug)
     norm_text = (reflection_text + "\n" + followup_note).strip()

@@ -23,7 +23,6 @@ def _extract_core(reflection: str) -> str:
     parts = re.split(r"[.!?]", reflection)
     core = parts[0].strip()
 
-    # remove leading filler, longest matches first
     core = re.sub(
         r"^(i feel|i felt|i noticed|i think|today|i)\s+",
         "",
@@ -32,6 +31,13 @@ def _extract_core(reflection: str) -> str:
     )
 
     return core
+
+
+def _to_second_person(text: str) -> str:
+    text = re.sub(r"^my\b", "your", text, flags=re.I)
+    text = re.sub(r"\bmy\b", "your", text, flags=re.I)
+    text = re.sub(r"\bme\b", "you", text, flags=re.I)
+    return text
 
 
 def generate_mirror(reflection_text: str, mood: str, presence_stage: int) -> str:
@@ -56,7 +62,6 @@ def generate_mirror(reflection_text: str, mood: str, presence_stage: int) -> str
 
     # ------------------------------------------------------------------
     # Semantic mappings for common emotional / situational states
-    # These keep the mirror natural instead of producing awkward fragments.
     # ------------------------------------------------------------------
     if "overwhelmed" in reflection_low:
         return "You noticed a sense of overwhelm today." if "today" in reflection_low else "You noticed a sense of overwhelm."
@@ -72,9 +77,16 @@ def generate_mirror(reflection_text: str, mood: str, presence_stage: int) -> str
         return "You noticed a sense of lack of control."
 
     # ------------------------------------------------------------------
+    # Direct ownership-preserving handling
+    # ------------------------------------------------------------------
+    if low.startswith("my "):
+        natural = _to_second_person(low)
+        mirror = f"It seems {natural}."
+
+    # ------------------------------------------------------------------
     # Natural sentence handling
     # ------------------------------------------------------------------
-    if low.startswith(("it ", "there ", "was ", "were ")):
+    elif low.startswith(("it ", "there ", "was ", "were ")):
         mirror = core_clean.capitalize() + "."
     elif low.startswith("felt "):
         mirror = "Felt " + low[len("felt "):] + "."
@@ -83,7 +95,6 @@ def generate_mirror(reflection_text: str, mood: str, presence_stage: int) -> str
     else:
         prefix = PREFIXES[presence_stage % len(PREFIXES)]
 
-        # states/adjectives that need soft framing
         if low.endswith("ed today") or low.endswith("ed"):
             sense_text = low
             if sense_text.startswith("overwhelmed"):

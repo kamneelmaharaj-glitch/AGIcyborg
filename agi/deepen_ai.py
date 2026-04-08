@@ -67,6 +67,7 @@ def _attach_presence_debug(
         silenced=silenced,
     )
 
+
 # -----------------------------------
 # Silence output (C5)
 # -----------------------------------
@@ -547,6 +548,89 @@ Insights must:
 
 If an insight pushes, fixes, reassures, or explains — it is wrong.
 """
+
+# ----------------------------
+# Fallback Insight Variation (deterministic, no randomness)
+# ----------------------------
+
+def _normalize_variant_text(text: str) -> str:
+    text = (text or "").strip().lower()
+    text = text.replace("’", "'")
+    text = re.sub(r"\s+", " ", text)
+    return text
+
+
+def _stable_variant_index(
+    reflection_text: str,
+    theme: str,
+    presence_stage: int | None,
+    pool_size: int,
+) -> int:
+    if pool_size <= 1:
+        return 0
+
+    key = "||".join([
+        _normalize_variant_text(reflection_text),
+        _normalize_variant_text(theme),
+        str(presence_stage if presence_stage is not None else 0),
+    ])
+    return sum(ord(c) for c in key) % pool_size
+
+
+FALLBACK_INSIGHT_VARIANTS: Dict[str, List[str]] = {
+    "clarity": [
+        "Something in this may be simpler than it seems.",
+        "Something here may be simpler than it looks.",
+        "Something in this may not be as complex as it feels.",
+    ],
+    "compassion": [
+        "Something here may be asking to be met more gently.",
+        "Something in this may be held more gently.",
+        "Something here may be met with a little more gentleness.",
+    ],
+    "courage": [
+        "Something in this may be near what has not been faced yet.",
+        "Something here may be close to what needs to be faced.",
+        "Something in this may already be at the edge of being faced.",
+    ],
+    "presence": [
+        "Something here may be asking to be met in this moment.",
+        "Something in this may be met just as it is.",
+        "Something here may be here without needing to change.",
+    ],
+    "surrender": [
+        "Something here may not need to be held so tightly.",
+        "Something in this may be allowed to ease.",
+        "Something here may be as it is without being held.",
+    ],
+    "calm sage": [
+        "Something here may already be settling.",
+        "Something in this may already be quiet.",
+        "Something here may not need anything added to it.",
+    ],
+}
+
+
+def _select_fallback_insight(
+    reflection_text: str,
+    theme: str,
+    presence_stage: int | None,
+    default_insight: str,
+) -> str:
+    key = _normalize_variant_text(theme)
+    pool = FALLBACK_INSIGHT_VARIANTS.get(key)
+
+    if not pool:
+        return default_insight
+
+    idx = _stable_variant_index(
+        reflection_text=reflection_text,
+        theme=theme,
+        presence_stage=presence_stage,
+        pool_size=len(pool),
+    )
+    return pool[idx]
+
 def _align_insight_tone(theme_label: str, mood: str, insight: str) -> str:
     t = (insight or "").strip()
     if not t:
@@ -1939,7 +2023,17 @@ def generate_deepen_insight(
     # 4) Theme fallback if empty
     # -------------------------
     if not (insight or "").strip():
-        insight = THEME_FALLBACK_INSIGHT.get(theme_label, THEME_FALLBACK_INSIGHT["Clarity"])
+        presence_stage = st.session_state.get("presence_stage", 0)
+
+        insight = _select_fallback_insight(
+            reflection_text=reflection_text,
+            theme=theme_label,
+            presence_stage=presence_stage,
+            default_insight=THEME_FALLBACK_INSIGHT.get(
+                theme_label,
+                THEME_FALLBACK_INSIGHT["Clarity"]
+            ),
+        )
         used_fallback = True
         insight_source = "fallback"
         _dp("insight=fallback")

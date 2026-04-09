@@ -796,7 +796,7 @@ def render_microstep_widget(sb, user_id: str) -> None:
             else:
                 micro_text = (latest.get("micro_text") or "—").strip()
 
-                st.write(f"**Tiny action:** {micro_text}")
+                st.write(f"**Today’s micro-step:** {micro_text}")
 
                 why_line = _why_it_matters_line(theme, micro_text)
                 st.markdown(f"🪷 *{why_line}*")
@@ -836,7 +836,7 @@ def render_microstep_widget(sb, user_id: str) -> None:
             row_box = st.container()
             with row_box:
                 st.markdown(f"**{when} • {theme}**")
-                st.write(f"**Tiny action:** {text}")
+                st.write(f"**Micro-step:** {text}")
 
                 c1, c2 = st.columns([2, 1])
                 with c1:

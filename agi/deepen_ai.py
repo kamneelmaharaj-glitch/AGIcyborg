@@ -82,10 +82,10 @@ def _silence_output(*, mood: str) -> tuple[str, str | None, str]:
 
     if mood in ("overwhelmed", "heavy"):
         stillness = "This moment is being held."
-        microstep = "One hand resting on the chest."
+        microstep = "One hand, resting lightly on the chest."
     elif mood in ("drained", "tender"):
         stillness = "You are already here."
-        microstep = "One hand resting on the chest."
+        microstep = "One hand, resting lightly on the chest."
     else:
         stillness = "Nothing missing here."
         microstep = "Sit upright for ten seconds."
@@ -1380,6 +1380,73 @@ def _pick_category_for_step(step: str, preferred: Optional[str] = None) -> str:
     # 3) Safe default pool
     return (pref if pref in _CATEGORY_PATTERNS else "posture")
 
+ALIGNED_MICROSTEP_POOLS = {
+    "breath": [
+        "A slow breath, just as it is.",
+        "Breath moving, gently in and out.",
+        "A quiet breath, rising and falling.",
+    ],
+    "touch": [
+        "One hand, resting lightly on the chest.",
+        "Both hands, resting on the thighs.",
+        "A hand, resting where contact is felt.",
+    ],
+    "pacing": [
+        "A small pause, just here.",
+        "A moment, without needing to move.",
+        "Stillness, even for a moment.",
+    ],
+    "environment": [
+        "One thing in the room, quietly in view.",
+        "A single point of attention, just here.",
+        "What is around you, without needing to change.",
+    ],
+    "posture": [
+        "Feet on the ground, steady and supported.",
+        "A settled posture, just as it is.",
+        "The body, supported where it is.",
+    ],
+}
+
+def _select_aligned_microstep(
+    category: str,
+    theme: str,
+    reflection_text: str,
+    presence_stage: int | None,
+    fallback: str,
+) -> str:
+    pool = ALIGNED_MICROSTEP_POOLS.get((category or "").strip().lower())
+    if not pool:
+        return fallback
+
+    key = "||".join([
+        (category or "").strip().lower(),
+        (theme or "").strip().lower(),
+        (reflection_text or "").strip().lower(),
+        str(presence_stage if presence_stage is not None else 0),
+    ])
+    idx = sum(ord(c) for c in key) % len(pool)
+    return pool[idx]
+
+
+def _align_microstep_tone(text: str) -> str:
+    t = (text or "").strip()
+    if not t:
+        return "One hand, resting lightly on the chest."
+
+    replacements = {
+        "Pause and notice one sensation in your body.": "A quiet noticing, of one sensation in the body.",
+        "Pause and notice one sensation in your body": "A quiet noticing, of one sensation in the body.",
+        "One hand resting on the chest.": "One hand, resting lightly on the chest.",
+        "One hand resting on the chest": "One hand, resting lightly on the chest.",
+        "Place both hands on your thighs.": "Both hands, resting on the thighs.",
+        "Place both hands on your thighs": "Both hands, resting on the thighs.",
+        "Take a slow breath.": "A slow breath, just as it is.",
+        "Take a slow breath": "A slow breath, just as it is.",
+    }
+
+    return replacements.get(t, t)
+
 # -------------------------------------------------------------------
 # Prompt composer
 # -------------------------------------------------------------------
@@ -2017,7 +2084,13 @@ def generate_deepen_insight(
     if not is_valid_microstep(microstep):
         if os.getenv("AGI_DEBUG") == "1":
             print("MICROSTEP DBG:", {"rejected": microstep})
-        microstep = "Pause and notice one sensation in your body."
+        microstep = _select_aligned_microstep(
+            category="touch" if recovery_mode else "pacing",
+            theme=theme_label,
+            reflection_text=reflection_text,
+            presence_stage=presence_stage_final,
+            fallback="One hand, resting lightly on the chest." if recovery_mode else "A small pause, just here.",
+        )
 
     # -------------------------
     # 4) Theme fallback if empty
@@ -2217,7 +2290,7 @@ def generate_deepen_insight(
         or (not _starts_with_allowed_verb_titlecase(microstep))
         or _looks_multi_step(microstep)
     ):
-        microstep = "One hand resting on the chest."
+        microstep = "One hand, resting lightly on the chest."
         used_fallback = True
         guardrail_adjusted = True
         _dp("hard_safe=fired")
@@ -2243,6 +2316,11 @@ def generate_deepen_insight(
             dbg["repeat_action"] = (repeat_meta.get("repeat_action") or "rotated")
             dbg["repeat_match"] = (repeat_meta.get("repeat_match") or "")
 
+    # -------------------------
+    # 11.5) Microstep tone align (final)
+    # -------------------------
+    microstep = _align_microstep_tone(microstep)
+            
     # -------------------------
     # 12) Final polish
     # -------------------------

@@ -569,9 +569,12 @@ def _stable_variant_index(
     if pool_size <= 1:
         return 0
 
+    reflection_norm = _normalize_variant_text(reflection_text)
+    tail = reflection_norm[-30:]
+
     key = "||".join([
-        _normalize_variant_text(reflection_text),
         _normalize_variant_text(theme),
+        tail,
         str(presence_stage if presence_stage is not None else 0),
     ])
     return sum(ord(c) for c in key) % pool_size
@@ -630,6 +633,28 @@ def _select_fallback_insight(
         pool_size=len(pool),
     )
     return pool[idx]
+
+def _maybe_refine_fallback_insight(
+    insight: str,
+    theme: str,
+    reflection_text: str,
+) -> str:
+    t = (insight or "").strip()
+    if not t:
+        return t
+
+    rl = (reflection_text or "").strip().lower()
+    key = _normalize_variant_text(theme)
+
+    if key == "clarity":
+        if any(x in rl for x in ("crowded", "scattered", "heavy", "overwhelmed", "too much")):
+            if "simpler than it looks" in t:
+                return "Something here may be simpler than it feels."
+        if any(x in rl for x in ("confused", "unclear", "foggy")):
+            if "not as complex as it feels" in t:
+                return "Something in this may be simpler than it seems."
+
+    return t
 
 def _align_insight_tone(theme_label: str, mood: str, insight: str) -> str:
     t = (insight or "").strip()
@@ -2107,6 +2132,11 @@ def generate_deepen_insight(
                 THEME_FALLBACK_INSIGHT["Clarity"]
             ),
         )
+        insight = _maybe_refine_fallback_insight(
+            insight=insight,
+            theme=theme_label,
+            reflection_text=reflection_text,
+        )
         used_fallback = True
         insight_source = "fallback"
         _dp("insight=fallback")
@@ -2320,7 +2350,7 @@ def generate_deepen_insight(
     # 11.5) Microstep tone align (final)
     # -------------------------
     microstep = _align_microstep_tone(microstep)
-            
+
     # -------------------------
     # 12) Final polish
     # -------------------------

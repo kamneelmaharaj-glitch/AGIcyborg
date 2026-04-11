@@ -691,6 +691,44 @@ def _align_insight_tone(theme_label: str, mood: str, insight: str) -> str:
 
     return t
 
+def _maybe_add_continuity(
+    insight: str,
+    reflection_text: str,
+    recent_followups: list[str],
+    presence_stage: int | None,
+) -> str:
+    t = (insight or "").strip()
+    if not t:
+        return t
+
+    if not recent_followups:
+        return t
+
+    rl = (reflection_text or "").lower()
+
+    repeat_signals = (
+        "again",
+        "still",
+        "same",
+        "keep",
+        "always",
+    )
+
+    if not any(sig in rl for sig in repeat_signals):
+        return t
+
+    if presence_stage is not None and presence_stage <= 1:
+        return t
+
+    # Subtle continuity only: soften phrasing, do not mention memory
+    replacements = {
+        "Something in this may be simpler than it seems.": "Something in this may be asking for a quieter kind of seeing.",
+        "Something here may be simpler than it looks.": "Something here may be softening when it is seen more simply.",
+        "Something in this may not be as complex as it feels.": "Something in this may be loosening a little when it is not held all at once.",
+    }
+
+    return replacements.get(t, t)
+
 _STALE_OPENERS = (
     "slowing down allows you to",
     "slowing down invites you to",
@@ -1098,17 +1136,22 @@ def compose_reflection_response(
 
     parts = []
 
-    for part in (mirror_line, mirror_question, memory_echo):
-        if part:
-            parts.append(part.strip())
+    if mirror_line:
+        parts.append(mirror_line)
+
+    if mirror_question:
+        parts.append("\n" + mirror_question)  # tighter pairing
+
+    if memory_echo:
+        parts.append("\n" + memory_echo)
 
     if insight:
-        parts.append(insight.strip())
+        parts.append("\n\n" + insight)
 
     if microstep:
-        parts.append(microstep.strip())
+        parts.append("\n\n" + microstep)
 
-    return "\n\n".join(parts)
+    return "".join(parts).strip()
 
 def _recent_microsteps(recent_followups: List[str], window: int = 3) -> List[str]:
     """
@@ -1944,10 +1987,8 @@ def generate_deepen_insight(
     if os.getenv("AGI_DEBUG") == "1":
         print("MIRROR QUESTION DBG:", mirror_question)
 
-    memory_echo = maybe_add_memory_echo(
-        mood=mood,
-        presence_stage=presence_stage_final,
-    )
+    memory_echo = " "
+    
 
     if os.getenv("AGI_DEBUG") == "1":
         print("MEMORY ECHO DBG:", memory_echo)
@@ -2375,6 +2416,16 @@ def generate_deepen_insight(
     # Rate-limit override (B)
     if model_rate_limited and insight_source == "fallback":
         insight_source = "fallback_due_to_rate_limit"
+
+    # -------------------------
+    # Continuity (subtle, optional)
+    # -------------------------
+    insight = _maybe_add_continuity(
+        insight=insight,
+        reflection_text=reflection_text,
+        recent_followups=recent_followups,
+        presence_stage=presence_stage_final,
+    )
 
     response_text = compose_reflection_response(
         mirror_line=mirror_line,

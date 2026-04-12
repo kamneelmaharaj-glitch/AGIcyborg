@@ -1126,32 +1126,45 @@ def compose_reflection_response(
     Compose the final reflection response in deterministic order.
 
     Order:
-        1) Mirror
-        2) Mirror Question
+        1) Mirror + mirror question (kept close)
+        2) Optional memory echo
         3) Insight
         4) Microstep
 
     Empty parts are skipped.
     """
 
-    parts = []
+    mirror_line = (mirror_line or "").strip()
+    mirror_question = (mirror_question or "").strip()
+    memory_echo = (memory_echo or "").strip()
+    insight = (insight or "").strip()
+    microstep = (microstep or "").strip()
 
+    blocks: list[str] = []
+
+    # Mirror block: keep line + question tightly grouped
+    mirror_block_parts: list[str] = []
     if mirror_line:
-        parts.append(mirror_line)
-
+        mirror_block_parts.append(mirror_line)
     if mirror_question:
-        parts.append("\n" + mirror_question)  # tighter pairing
+        mirror_block_parts.append(mirror_question)
 
+    if mirror_block_parts:
+        blocks.append("\n".join(mirror_block_parts))
+
+    # Optional continuity / echo block
     if memory_echo:
-        parts.append("\n" + memory_echo)
+        blocks.append(memory_echo)
 
+    # Insight block
     if insight:
-        parts.append("\n\n" + insight)
+        blocks.append(insight)
 
+    # Microstep block
     if microstep:
-        parts.append("\n\n" + microstep)
+        blocks.append(microstep)
 
-    return "".join(parts).strip()
+    return "\n\n".join(blocks).strip()
 
 def _recent_microsteps(recent_followups: List[str], window: int = 3) -> List[str]:
     """

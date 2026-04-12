@@ -108,6 +108,8 @@ def generate_mirror(reflection_text: str, mood: str, presence_stage: int) -> str
     mirror = mirror.replace(" i ", " I ")
     mirror = mirror.replace(" i'", " I'")
 
+    mirror = _clean_mirror_sentence(mirror)
+
     if mirror:
         mirror = mirror[0].upper() + mirror[1:]
 
@@ -117,3 +119,19 @@ def generate_mirror(reflection_text: str, mood: str, presence_stage: int) -> str
             mirror += "."
 
     return mirror
+
+def _clean_mirror_sentence(text: str) -> str:
+    t = (text or "").strip()
+
+    t = t.replace("sense still feel", "sense that you still feel")
+    t = t.replace("sense still feels", "sense that still feels")
+    t = t.replace("There was a sense that you still feel", "You still feel")
+    t = t.replace("There was a sense still feel", "You still feel")
+
+    if t and not t[0].isupper():
+        t = t[0].upper() + t[1:]
+
+    if t and t[-1] not in ".!?":
+        t += "."
+
+    return t

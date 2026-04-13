@@ -120,6 +120,22 @@ def generate_mirror(reflection_text: str, mood: str, presence_stage: int) -> str
 
     return mirror
 
+def _dedupe_redundant_phrases(text: str) -> str:
+    import re
+
+    t = text
+
+    # Remove stacked meaning overlaps
+    t = re.sub(r"\bstill feel the same\b", "still feel", t)
+    t = re.sub(r"\bthe same .* again today\b", "the same today", t)
+    t = re.sub(r"\bagain today\b", "today", t)
+
+    # Remove accidental repeats
+    t = re.sub(r"\b(still|same|again)\s+\1\b", r"\1", t)
+
+    return t
+
+
 def _clean_mirror_sentence(text: str) -> str:
     t = (text or "").strip()
 
@@ -127,6 +143,8 @@ def _clean_mirror_sentence(text: str) -> str:
     t = t.replace("sense still feels", "sense that still feels")
     t = t.replace("There was a sense that you still feel", "You still feel")
     t = t.replace("There was a sense still feel", "You still feel")
+
+    t = _dedupe_redundant_phrases(t)
 
     if t and not t[0].isupper():
         t = t[0].upper() + t[1:]

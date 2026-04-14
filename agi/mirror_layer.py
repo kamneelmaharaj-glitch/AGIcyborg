@@ -77,6 +77,21 @@ def generate_mirror(reflection_text: str, mood: str, presence_stage: int) -> str
         return "You noticed a sense of lack of control."
 
     # ------------------------------------------------------------------
+    # Semantic noun-form mappings for cleaner mirror language
+    # ------------------------------------------------------------------
+    NOUN_MAP = {
+        "heavy": "heaviness",
+        "tight": "tightness",
+        "uncertain": "uncertainty",
+    }
+
+    for word, noun in NOUN_MAP.items():
+        if re.search(rf"\b{word}\b", reflection_low):
+            if "today" in reflection_low:
+                return f"You noticed a sense of {noun} today."
+            return f"You noticed a sense of {noun}."
+
+    # ------------------------------------------------------------------
     # Direct ownership-preserving handling
     # ------------------------------------------------------------------
     if low.startswith("my "):

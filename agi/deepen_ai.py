@@ -82,10 +82,10 @@ def _silence_output(*, mood: str) -> tuple[str, str | None, str]:
 
     if mood in ("overwhelmed", "heavy"):
         stillness = "This moment is being held."
-        microstep = "One hand, resting lightly on the chest."
+        microstep = "A hand resting lightly on the chest."
     elif mood in ("drained", "tender"):
         stillness = "You are already here."
-        microstep = "One hand, resting lightly on the chest."
+        microstep = "A hand resting lightly on the chest."
     else:
         stillness = "Nothing missing here."
         microstep = "Sit upright for ten seconds."
@@ -1468,24 +1468,24 @@ ALIGNED_MICROSTEP_POOLS = {
         "A quiet breath, rising and falling.",
     ],
     "touch": [
-        "One hand, resting lightly on the chest.",
-        "Both hands, resting on the thighs.",
-        "A hand, resting where contact is felt.",
+        "A hand resting lightly on the chest.",
+        "Both hands resting on the thighs.",
+        "A hand resting where contact is felt.",
     ],
     "pacing": [
-        "A small pause, just here.",
-        "A moment, without needing to move.",
-        "Stillness, even for a moment.",
+        "A small pause, here.",
+        "A moment without needing to move.",
+        "Stillness, even briefly.",
     ],
     "environment": [
         "One thing in the room, quietly in view.",
-        "A single point of attention, just here.",
-        "What is around you, without needing to change.",
+        "A single point of attention, here.",
+        "What is around you, as it is.",
     ],
     "posture": [
         "Feet on the ground, steady and supported.",
-        "A settled posture, just as it is.",
-        "The body, supported where it is.",
+        "A settled posture, as it is.",
+        "The body supported where it is.",
     ],
 }
 
@@ -1513,15 +1513,15 @@ def _select_aligned_microstep(
 def _align_microstep_tone(text: str) -> str:
     t = (text or "").strip()
     if not t:
-        return "One hand, resting lightly on the chest."
+        return "A hand resting lightly on the chest."
 
     replacements = {
         "Pause and notice one sensation in your body.": "A quiet noticing, of one sensation in the body.",
         "Pause and notice one sensation in your body": "A quiet noticing, of one sensation in the body.",
-        "One hand resting on the chest.": "One hand, resting lightly on the chest.",
-        "One hand resting on the chest": "One hand, resting lightly on the chest.",
-        "Place both hands on your thighs.": "Both hands, resting on the thighs.",
-        "Place both hands on your thighs": "Both hands, resting on the thighs.",
+        "One hand resting on the chest.": "A hand resting lightly on the chest.",
+        "One hand resting on the chest": "A hand resting lightly on the chest.",
+        "Place both hands on your thighs.": "Both hands resting on the thighs.",
+        "Place both hands on your thighs": "Both hands resting on the thighs.",
         "Take a slow breath.": "A slow breath, just as it is.",
         "Take a slow breath": "A slow breath, just as it is.",
     }
@@ -2168,7 +2168,7 @@ def generate_deepen_insight(
             theme=theme_label,
             reflection_text=reflection_text,
             presence_stage=presence_stage_final,
-            fallback="One hand, resting lightly on the chest." if recovery_mode else "A small pause, just here.",
+            fallback="A hand resting lightly on the chest." if recovery_mode else "A small pause, just here.",
         )
 
     # -------------------------
@@ -2374,7 +2374,7 @@ def generate_deepen_insight(
         or (not _starts_with_allowed_verb_titlecase(microstep))
         or _looks_multi_step(microstep)
     ):
-        microstep = "One hand, resting lightly on the chest."
+        microstep = "A hand resting lightly on the chest."
         used_fallback = True
         guardrail_adjusted = True
         _dp("hard_safe=fired")

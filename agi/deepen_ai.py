@@ -579,6 +579,25 @@ def _stable_variant_index(
     ])
     return sum(ord(c) for c in key) % pool_size
 
+def _is_semantically_similar(a: str, b: str) -> bool:
+    """
+    Lightweight semantic similarity check (no AI).
+    """
+    if not a or not b:
+        return False
+
+    a_low = a.lower()
+    b_low = b.lower()
+
+    # direct overlap
+    if a_low in b_low or b_low in a_low:
+        return True
+
+    # keyword-level overlap
+    keywords = ["simpler", "gentle", "quiet", "settle", "ease", "held"]
+    overlap = sum(1 for k in keywords if k in a_low and k in b_low)
+
+    return overlap >= 2
 
 FALLBACK_INSIGHT_VARIANTS: Dict[str, List[str]] = {
     "clarity": [
@@ -613,12 +632,12 @@ FALLBACK_INSIGHT_VARIANTS: Dict[str, List[str]] = {
     ],
 }
 
-
 def _select_fallback_insight(
     reflection_text: str,
     theme: str,
     presence_stage: int | None,
     default_insight: str,
+    recent_insights: list[str] | None = None,  # NEW
 ) -> str:
     key = _normalize_variant_text(theme)
     pool = FALLBACK_INSIGHT_VARIANTS.get(key)
@@ -632,7 +651,17 @@ def _select_fallback_insight(
         presence_stage=presence_stage,
         pool_size=len(pool),
     )
-    return pool[idx]
+
+    candidate = pool[idx]
+
+    # 🔹 Avoid semantic repetition across recent insights
+    if recent_insights:
+        for prev in recent_insights[-3:]:
+            if _is_semantically_similar(candidate, prev):
+                idx = (idx + 1) % len(pool)
+                candidate = pool[idx]
+
+    return candidate
 
 def _maybe_refine_fallback_insight(
     insight: str,
@@ -1185,6 +1214,23 @@ def _recent_microsteps(recent_followups: List[str], window: int = 3) -> List[str
         out.append(t)
     return out
 
+def _recent_insights(recent_followups: list[str], window: int = 3) -> list[str]:
+    out = []
+    for item in (recent_followups or [])[-window:]:
+        t = (item or "").strip()
+        if not t:
+            continue
+
+        low = t.lower()
+
+        # Extract insight if stored in blob
+        if "insight:" in low:
+            idx = low.rfind("insight:")
+            t = t[idx + len("insight:"):].strip()
+
+        out.append(t)
+
+    return out
 
 def _avoid_exact_repeat_microstep(
     candidate: str,
@@ -2185,6 +2231,7 @@ def generate_deepen_insight(
                 theme_label,
                 THEME_FALLBACK_INSIGHT["Clarity"]
             ),
+            recent_insights=_recent_insights(recent_followups),
         )
         insight = _maybe_refine_fallback_insight(
             insight=insight,

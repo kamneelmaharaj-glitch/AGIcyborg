@@ -63,12 +63,19 @@ def generate_mirror(reflection_text: str, mood: str, presence_stage: int) -> str
     # ------------------------------------------------------------------
     # Semantic mappings for common emotional / situational states
     # ------------------------------------------------------------------
+    
+    if re.search(r"\b(it's|its|it is)\s+an?\s+overwhelming\b", reflection_low):
+        return "There is an overwhelming feeling today." if "today" in reflection_low else "There is an overwhelming feeling."
+    
     if "overwhelmed" in reflection_low:
         return "You noticed a sense of overwhelm today." if "today" in reflection_low else "You noticed a sense of overwhelm."
+    
     if re.search(r"\bhurt\b", reflection_low):
         return "There was a sense of hurt."
+    
     if re.search(r"\bavoiding\b|\bavoid\b", reflection_low):
         return "There was a sense of avoidance."
+    
     if (
         "can't control" in reflection_low
         or "can’t control" in reflection_low

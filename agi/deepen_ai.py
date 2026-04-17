@@ -601,9 +601,9 @@ def _is_semantically_similar(a: str, b: str) -> bool:
 
 FALLBACK_INSIGHT_VARIANTS: Dict[str, List[str]] = {
     "clarity": [
-        "Something in this may be simpler than it seems.",
-        "Something here may be simpler than it looks.",
-        "Something in this may not be as complex as it feels.",
+        "What you're noticing may be simpler than it seems.",
+        "What you're noticing may be simpler than it feels.",
+        "What you're noticing may not be as complex as it feels.",
     ],
     "compassion": [
         "Something here may be asking to be met more gently.",
@@ -674,14 +674,22 @@ def _maybe_refine_fallback_insight(
 
     rl = (reflection_text or "").strip().lower()
     key = _normalize_variant_text(theme)
+    tl = t.lower().strip()
 
     if key == "clarity":
         if any(x in rl for x in ("crowded", "scattered", "heavy", "overwhelmed", "too much")):
-            if "simpler than it looks" in t:
-                return "Something here may be simpler than it feels."
-        if any(x in rl for x in ("confused", "unclear", "foggy")):
-            if "not as complex as it feels" in t:
-                return "Something in this may be simpler than it seems."
+            if "not be as complex as it feels" in tl:
+                return "What you're noticing may not be as complex as it feels."
+            if "simpler than it seems" in tl:
+                return "What you're noticing may be simpler than it seems."
+            if "simpler than it looks" in tl:
+                return "What you're noticing may be simpler than it feels."
+
+        if any(x in rl for x in ("confused", "unclear", "foggy", "uncertain")):
+            if "not be as complex as it feels" in tl:
+                return "What you're noticing may be simpler than it seems."
+            if "simpler than it looks" in tl or "simpler than it seems" in tl:
+                return "What you're noticing here may be simpler than it seems."
 
     return t
 
@@ -751,9 +759,9 @@ def _maybe_add_continuity(
 
     # Subtle continuity only: soften phrasing, do not mention memory
     replacements = {
-        "Something in this may be simpler than it seems.": "Something in this may be asking for a quieter kind of seeing.",
-        "Something here may be simpler than it looks.": "Something here may be softening when it is seen more simply.",
-        "Something in this may not be as complex as it feels.": "Something in this may be loosening a little when it is not held all at once.",
+        "What you're noticing may be simpler than it seems.": "What you're noticing may be asking for a quieter kind of seeing.",
+        "What you're noticing may be simpler than it feels.": "What you're noticing may be softening when it is seen more simply.",
+        "What you're noticing may not be as complex as it feels.": "What you're noticing may be loosening a little when it is not held all at once.",
     }
 
     return replacements.get(t, t)
@@ -2485,6 +2493,12 @@ def generate_deepen_insight(
         reflection_text=reflection_text,
         recent_followups=recent_followups,
         presence_stage=presence_stage_final,
+    )
+
+    insight = _maybe_refine_fallback_insight(
+        insight=insight,
+        theme=theme_label,
+        reflection_text=reflection_text,
     )
 
     response_text = compose_reflection_response(

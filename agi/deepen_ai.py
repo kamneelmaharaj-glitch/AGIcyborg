@@ -565,6 +565,7 @@ def _stable_variant_index(
     theme: str,
     presence_stage: int | None,
     pool_size: int,
+    recent_tail: str = "",
 ) -> int:
     if pool_size <= 1:
         return 0
@@ -576,6 +577,7 @@ def _stable_variant_index(
         _normalize_variant_text(theme),
         tail,
         str(presence_stage if presence_stage is not None else 0),
+        _normalize_variant_text(recent_tail),
     ])
     return sum(ord(c) for c in key) % pool_size
 
@@ -601,9 +603,9 @@ def _is_semantically_similar(a: str, b: str) -> bool:
 
 FALLBACK_INSIGHT_VARIANTS: Dict[str, List[str]] = {
     "clarity": [
-        "What you're noticing may be simpler than it seems.",
-        "What you're noticing may be simpler than it feels.",
         "What you're noticing may not be as complex as it feels.",
+        "What you're noticing may be simpler than it seems.",
+        "What you're noticing may not need to be held all at once.",
     ],
     "compassion": [
         "Something here may be asking to be met more gently.",
@@ -656,7 +658,7 @@ def _select_fallback_insight(
 
     # 🔹 Avoid semantic repetition across recent insights
     if recent_insights:
-        for prev in recent_insights[-3:]:
+        for prev in reversed(recent_insights[-2:]):
             if _is_semantically_similar(candidate, prev):
                 idx = (idx + 1) % len(pool)
                 candidate = pool[idx]
@@ -761,7 +763,7 @@ def _maybe_add_continuity(
     replacements = {
         "What you're noticing may be simpler than it seems.": "What you're noticing may be asking for a quieter kind of seeing.",
         "What you're noticing may be simpler than it feels.": "What you're noticing may be softening when it is seen more simply.",
-        "What you're noticing may not be as complex as it feels.": "What you're noticing may be loosening a little when it is not held all at once.",
+        "What you're noticing may not be as complex as it feels.": "What you're noticing may not need to be held all at once.",
     }
 
     return replacements.get(t, t)
@@ -1239,6 +1241,21 @@ def _recent_insights(recent_followups: list[str], window: int = 3) -> list[str]:
         out.append(t)
 
     return out
+
+def _is_similar_insight(a: str, b: str) -> bool:
+    a_low = (a or "").lower()
+    b_low = (b or "").lower()
+
+    if not a_low or not b_low:
+        return False
+
+    if a_low in b_low or b_low in a_low:
+        return True
+
+    keywords = ["complex", "simpler", "feel", "notice", "seem"]
+    overlap = sum(1 for k in keywords if k in a_low and k in b_low)
+
+    return overlap >= 2
 
 def _avoid_exact_repeat_microstep(
     candidate: str,
@@ -2500,6 +2517,23 @@ def generate_deepen_insight(
         theme=theme_label,
         reflection_text=reflection_text,
     )
+
+    recent_insights = _recent_insights(recent_followups)
+
+    if any(_is_similar_insight(insight, r) for r in recent_insights):
+        insight = _select_fallback_insight(
+            reflection_text=reflection_text,
+            theme=theme_label,
+            presence_stage=presence_stage_final,
+            default_insight=insight,
+            recent_insights=recent_insights,
+        )
+
+        insight = _maybe_refine_fallback_insight(
+            insight=insight,
+            theme=theme_label,
+            reflection_text=reflection_text,
+        )
 
     response_text = compose_reflection_response(
         mirror_line=mirror_line,

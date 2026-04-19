@@ -16,12 +16,14 @@ def generate_mirror_question(
 ) -> str:
     """
     Generate a gentle reflective question.
-    Deterministic and intentionally simple.
+    Deterministic, simple, and context-aware (no interpretation).
     """
 
     reflection = (reflection_text or "").lower()
 
-    # Stable states
+    # ----------------------------
+    # Stable states (unchanged)
+    # ----------------------------
     if "steady" in reflection or "steadiness" in reflection:
         q = "What seemed to support that steadiness today?"
 
@@ -31,17 +33,42 @@ def generate_mirror_question(
     elif "calm" in reflection:
         q = "What may have contributed to that calm?"
 
-    # Drift states
+    # ----------------------------
+    # Drift / signal states
+    # ----------------------------
     elif "distracted" in reflection or "scattered" in reflection:
         q = "What helped you notice that drift?"
 
     elif "overwhelmed" in reflection:
         q = "What feels a little clearer within that overwhelm?"
 
-    # Default gentle reflection
+    # ----------------------------
+    # Subtle pattern-aware refinement (NEW)
+    # ----------------------------
     else:
-        q = "What feels a little clearer now?"
+        repeat_signals = ("again", "still", "same", "keep", "kept")
+        capacity_signals = ("tired", "heavy", "drained", "exhausted")
+        overwhelm_signals = ("too much", "a lot", "everything")
+        uncertainty_signals = ("uncertain", "unclear", "foggy", "confused")
 
+        if any(x in reflection for x in repeat_signals):
+            q = "What feels even slightly different this time?"
+
+        elif any(x in reflection for x in capacity_signals):
+            q = "What feels a little more within reach right now?"
+
+        elif any(x in reflection for x in overwhelm_signals):
+            q = "What feels a little less crowded right now?"
+
+        elif any(x in reflection for x in uncertainty_signals):
+            q = "What feels a little more known right now?"
+
+        else:
+            q = "What feels a little clearer now?"
+
+    # ----------------------------
+    # Normalize + safety
+    # ----------------------------
     q = _normalize(q)
 
     if len(q) > MAX_QUESTION_CHARS:

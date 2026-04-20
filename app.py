@@ -749,3 +749,47 @@ with st.expander("Energy & Reflection History", expanded=False):
     render_energy_section(sb, days=flt_days, theme=flt_theme)
     render_presence_continuity(sb, limit=7)
     render_recent_reflections(sb, days=flt_days, theme=flt_theme)
+
+# ----------------------------
+# DEV: Mobile Reflection Check
+# ----------------------------
+import os
+import streamlit as st
+
+DEV_ENABLED = os.getenv("AGI_DEV_PANEL", "0") == "1"
+
+if DEV_ENABLED:
+    with st.expander("🧪 Reflection Test (Dev)", expanded=False):
+        run_tests = st.checkbox("Run test reflections")
+
+        TEST_REFLECTIONS = [
+            "I feel overwhelmed today",
+            "I still feel overwhelmed today",
+            "Everything feels heavy again",
+            "I didn’t play guitar today",
+            "I again didn’t play guitar today",
+            "I feel too tired to play guitar",
+            "I feel uncertain",
+            "It’s an overwhelming feeling today",
+        ]
+
+        if run_tests:
+            from agi.deepen_ai import generate_deepen_insight
+
+            for i, txt in enumerate(TEST_REFLECTIONS, 1):
+                stillness, insight, microstep, response = generate_deepen_insight(
+                    theme="Clarity",
+                    reflection_text=txt,
+                    followup_note="",
+                    recent_followups=st.session_state.get("recent_followups", []),
+                    last_note=None,
+                )
+
+                st.markdown(f"### {i}. {txt}")
+
+                # Split composed response if you want sections
+                st.markdown("**Response**")
+                st.write(response)
+
+                # Optional: show parts if you store them separately
+                st.markdown("---")

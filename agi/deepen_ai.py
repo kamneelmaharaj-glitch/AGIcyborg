@@ -2165,42 +2165,35 @@ def generate_deepen_insight(
 
             _dp("model=error_handled")
 
-    # 2b) AI unavailable -> force silence contract + return
+    # 2b) AI unavailable -> deterministic fallback insight (do NOT force silence)
     if dbg.get("model_fallback_reason") in ("rate_limited", "model_error"):
-        silenced = True
-        silence_reason = "ai_unavailable"
+        silenced = False
+        silence_reason = None
 
-        dbg["silenced"] = True
-        dbg["silence_reason"] = silence_reason
-        dbg["silence_rule"] = "ai_unavailable"
-        _dp("model=ai_unavailable_to_silence")
+        dbg["silenced"] = False
+        dbg["silence_reason"] = None
+        dbg["silence_rule"] = ""
+        _dp("model=ai_unavailable_to_fallback")
 
-        stillness = _silence_stillness_for(mood)
-
-        # --- Presence payload (freeze on silence) ---
-        # Make sure these vars exist earlier in the function:
-        # presence_stage_prev, presence_drift_prev, presence_stage_today, presence_reason
-        presence_payload = {
-            "presence_stage_prev": presence_stage_prev,
-            "presence_stage_today": presence_stage_today,
-            "presence_stage_final": presence_stage_prev,      # freeze
-            "presence_stage_label": presence_stage_label(presence_stage_prev),
-            "presence_reason": "ai_unavailable_freeze",
-            "presence_drift_hits_prev": presence_drift_prev,
-            "presence_drift_hits_new": presence_drift_prev,   # freeze
-            "presence_dbg": {"note": "forced_silence_on_ai_unavailable"},
-        }
-
-        return _return_silence_contract(
-            theme_label=theme_label,
-            mood=mood,
-            silenced=True,
-            silence_reason=silence_reason,
-            stillness=stillness,
-            decision_path=decision_path,
-            dbg=dbg,
-            presence_payload=presence_payload,
+        insight = _select_fallback_insight(
+            reflection_text=reflection_text,
+            theme=theme_label,
+            presence_stage=presence_stage_final,
+            default_insight=THEME_FALLBACK_INSIGHT.get(
+                theme_label,
+                THEME_FALLBACK_INSIGHT["Clarity"]
+            ),
+            recent_insights=_recent_insights(recent_followups),
         )
+
+        insight = _maybe_refine_fallback_insight(
+            insight=insight,
+            theme=theme_label,
+            reflection_text=reflection_text,
+        )
+
+        used_fallback = True
+        insight_source = "fallback_due_to_ai_failure"
 
     # -------------------------
     # 3) Prefix strip + microstep reduction

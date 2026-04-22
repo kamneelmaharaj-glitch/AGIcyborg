@@ -102,8 +102,8 @@ def generate_mirror(reflection_text: str, mood: str, presence_stage: int) -> str
     # Direct ownership-preserving handling
     # ------------------------------------------------------------------
     if low.startswith("my "):
-        natural = _to_second_person(low)
-        mirror = f"It seems {natural}."
+        natural = _to_second_person(core_clean)
+        mirror = f"You noticed {natural}."
 
     # ------------------------------------------------------------------
     # Natural sentence handling
@@ -126,6 +126,7 @@ def generate_mirror(reflection_text: str, mood: str, presence_stage: int) -> str
         else:
             mirror = f"{prefix} {low}."
 
+    mirror = _normalize_mirror_pronouns(mirror)
     mirror = _normalize(mirror)
     mirror = mirror.replace(" i ", " I ")
     mirror = mirror.replace(" i'", " I'")
@@ -154,6 +155,29 @@ def _dedupe_redundant_phrases(text: str) -> str:
 
     # Remove accidental repeats
     t = re.sub(r"\b(still|same|again)\s+\1\b", r"\1", t)
+
+    return t
+
+
+def _normalize_mirror_pronouns(text: str) -> str:
+    t = (text or "").strip()
+
+    # sentence starts
+    t = re.sub(r"^(I|i)\b", "you", t)
+    t = re.sub(r"^(I'm|i'm)\b", "you're", t)
+    t = re.sub(r"^(I’ve|i’ve|I've|i've)\b", "you've", t)
+
+    # anywhere in sentence
+    t = re.sub(r"\b(I am|i am)\b", "you are", t)
+    t = re.sub(r"\b(I'm|i'm)\b", "you're", t)
+    t = re.sub(r"\b(I was|i was)\b", "you were", t)
+    t = re.sub(r"\b(I feel|i feel)\b", "you feel", t)
+    t = re.sub(r"\b(I felt|i felt)\b", "you felt", t)
+    t = re.sub(r"\b(I have|i have)\b", "you have", t)
+    t = re.sub(r"\b(I\b|i\b)", "you", t)
+
+    t = re.sub(r"\b(my|My)\b", "your", t)
+    t = re.sub(r"\b(me|Me)\b", "you", t)
 
     return t
 

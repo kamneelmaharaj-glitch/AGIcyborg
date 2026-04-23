@@ -6,9 +6,9 @@ MAX_MIRROR_CHARS = 140
 
 PREFIXES = (
     "You noticed",
-    "It seems",
+    "You noticed",
     "There was a sense",
-    "You became aware",
+    "You noticed",
 )
 
 
@@ -69,7 +69,7 @@ def generate_mirror(reflection_text: str, mood: str, presence_stage: int) -> str
     
     if "overwhelmed" in reflection_low:
         return "You noticed a sense of overwhelm today." if "today" in reflection_low else "You noticed a sense of overwhelm."
-    
+
     if re.search(r"\bhurt\b", reflection_low):
         return "There was a sense of hurt."
     
@@ -90,6 +90,9 @@ def generate_mirror(reflection_text: str, mood: str, presence_stage: int) -> str
         "heavy": "heaviness",
         "tight": "tightness",
         "uncertain": "uncertainty",
+        "distracted": "distraction",
+        "tired": "tiredness",
+        "frustrated": "frustration",
     }
 
     for word, noun in NOUN_MAP.items():

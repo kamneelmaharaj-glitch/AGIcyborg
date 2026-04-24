@@ -452,9 +452,18 @@ if submitted:
     if generate_insight:
         try:
             with st.spinner("Invoking Mentor…"):
-                generated_insight, generated_mantra = ai_generate(theme_used, reflection_text)
-        except Exception as e:
-            st.warning(f"AI generation skipped: {e}")
+                from agi.ai import safe_ai_generate
+
+                generated_insight, generated_mantra, mentor_source = safe_ai_generate(
+                    theme_used,
+                    reflection_text,
+                )
+                
+            st.session_state["last_mentor_source"] = mentor_source
+
+        except Exception:
+            # Silent fail — mirror continues without interruption
+            generated_insight, generated_mantra = None, None
 
     base_row = {
         "prompt_id":         selected_prompt_id,

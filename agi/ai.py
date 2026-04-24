@@ -160,7 +160,31 @@ def ai_generate(theme: str, reflection: str) -> Tuple[str, str]:
         mantra = " ".join(mantra.split()[:10])
     return insight, mantra
 
+def safe_ai_generate(theme: str, reflection: str) -> Tuple[str, str, str]:
+    """
+    Safe wrapper for standard Mentor insight + mantra.
 
+    Returns:
+        insight, mantra, source
+    """
+    try:
+        insight, mantra = ai_generate(theme, reflection)
+        from agi.mirror_layer import _normalize_ai_sentence
+
+        insight = _normalize_ai_sentence(insight)
+        
+        return insight, mantra, "ai"
+    except Exception as e:
+        msg = str(e).lower()
+
+        if "insufficient_quota" in msg or "quota" in msg:
+            return "", "", "ai_unavailable_quota"
+
+        if "rate limit" in msg or "429" in msg:
+            return "", "", "ai_unavailable_rate_limit"
+
+        return "", "", "ai_unavailable_error"
+    
 # ---------------------------------------------------------------------------
 # Deepen rate-limit circuit breaker
 # ---------------------------------------------------------------------------

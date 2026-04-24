@@ -193,8 +193,39 @@ def _clean_mirror_sentence(text: str) -> str:
     t = t.replace("There was a sense that you still feel", "You still feel")
     t = t.replace("There was a sense still feel", "You still feel")
 
+    # Naturalize adjective-state mirrors
+    t = re.sub(
+        r"\bYou noticed relaxed\b",
+        "You noticed a sense of relaxation",
+        t,
+    )
+
+    t = t.replace(" in spa", " in the spa")
+
     t = _dedupe_redundant_phrases(t)
 
+    if t and not t[0].isupper():
+        t = t[0].upper() + t[1:]
+
+    if t and t[-1] not in ".!?":
+        t += "."
+
+    return t
+
+def _normalize_ai_sentence(text: str) -> str:
+    t = (text or "").strip()
+
+    # Fix common missing structure
+    t = re.sub(r"\bnoticed (\w+ed)\b", r"noticed a sense of \1", t)
+
+    # Fix "relaxed", "tired", etc → feeling form
+    t = re.sub(r"\bnoticed a sense of (relaxed|tired|focused|calm)\b",
+               r"noticed a sense of \1", t)
+
+    # Optional refinement for better tone
+    t = t.replace("in spa", "in the spa")
+
+    # Capitalize + punctuation
     if t and not t[0].isupper():
         t = t[0].upper() + t[1:]
 

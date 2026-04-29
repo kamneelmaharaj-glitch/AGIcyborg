@@ -98,6 +98,47 @@ def _is_externalized_authority(text: str) -> bool:
 # It is not an error, fallback, or absence.
 # No AI output is required when silence is active.
 
+def _is_calm_clarity(text: str) -> bool:
+    t = (text or "").lower()
+
+    clarity_signals = (
+        "relaxed",
+        "calm",
+        "ease",
+        "easier",
+        "less tense",
+        "smooth",
+        "steady",
+        "grounded",
+        "noticed",
+        "aware",
+        "see clearly",
+        "clearly",
+        "reduced",
+        "lightening",
+        "lighter",
+        "allowed me",
+        "control",
+        "balance",
+        "coordination",
+    )
+
+    overload_signals = (
+        "overwhelmed",
+        "too much",
+        "can't handle",
+        "cannot handle",
+        "stressed",
+        "panic",
+        "breaking",
+    )
+
+    # If clear overload language is present, do not suppress silence
+    if any(x in t for x in overload_signals):
+        return False
+
+    return any(x in t for x in clarity_signals)
+
 def should_silence(
     *,
     reflection_text: str,
@@ -134,10 +175,17 @@ def should_silence(
         return True, "manual_subdued"
 
     # 1) Emotional overload → silence
+    # Guardrail: calm embodied clarity is not overload.
     if mood in ("overwhelmed", "heavy"):
+        if _is_calm_clarity(text):
+            if dbg is not None:
+                dbg["silence_rule"] = "calm_clarity_override"
+            return False, None
+
         if dbg is not None:
             dbg["silence_rule"] = "emotional_overload"
         return True, "emotional_overload"
+    
 
     # 2) No signal → silence
     if _is_no_signal(text):

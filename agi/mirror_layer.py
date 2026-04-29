@@ -117,6 +117,8 @@ def generate_mirror(reflection_text: str, mood: str, presence_stage: int) -> str
         mirror = "Felt " + low[len("felt "):] + "."
     elif low.startswith("feel "):
         mirror = "Feeling " + low[len("feel "):] + "."
+    elif low.startswith(("can ", "could ", "should ", "would ")):
+        mirror = f"You {low}."
     else:
         prefix = PREFIXES[presence_stage % len(PREFIXES)]
 

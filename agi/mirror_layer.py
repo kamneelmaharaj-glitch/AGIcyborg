@@ -119,6 +119,19 @@ def generate_mirror(reflection_text: str, mood: str, presence_stage: int) -> str
         mirror = "Feeling " + low[len("feel "):] + "."
     elif low.startswith(("can ", "could ", "should ", "would ")):
         mirror = f"You {low}."
+    elif low.startswith(("continue ", "keep ", "stay ", "ignore ", "focus ")):
+        parts = low.split(" ", 1)
+        verb = parts[0]
+        rest = parts[1] if len(parts) > 1 else ""
+
+    # simple verb → ing transformation
+        if verb.endswith("e"):
+            verb_ing = verb[:-1] + "ing"
+        else:
+            verb_ing = verb + "ing"
+
+        mirror = f"You’re {verb_ing} {rest}".strip() + "."
+
     else:
         prefix = PREFIXES[presence_stage % len(PREFIXES)]
 

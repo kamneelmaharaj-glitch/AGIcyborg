@@ -121,6 +121,14 @@ def _is_calm_clarity(text: str) -> bool:
         "control",
         "balance",
         "coordination",
+        "not everything is a priority",
+        "can wait",
+        "wait",
+        "observe",
+        "time is right",
+        "patience",
+        "act when the time is right",
+        "priority",
     )
 
     overload_signals = (
@@ -176,7 +184,7 @@ def should_silence(
 
     # 1) Emotional overload → silence
     # Guardrail: calm embodied clarity is not overload.
-    if mood in ("overwhelmed", "heavy"):
+    if mood in ("overwhelmed",):
         if _is_calm_clarity(text):
             if dbg is not None:
                 dbg["silence_rule"] = "calm_clarity_override"

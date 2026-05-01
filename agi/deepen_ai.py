@@ -80,7 +80,7 @@ def _silence_output(*, mood: str) -> tuple[str, str | None, str]:
     - Microstep must be grounding, not directional
     """
 
-    if mood in ("overwhelmed", "heavy"):
+    if mood in ("overwhelmed",):
         stillness = "This moment is being held."
         microstep = "A hand resting lightly on the chest."
     elif mood in ("drained", "tender"):

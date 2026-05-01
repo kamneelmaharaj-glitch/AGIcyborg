@@ -207,6 +207,9 @@ def _clean_mirror_sentence(text: str) -> str:
     t = t.replace("sense still feels", "sense that still feels")
     t = t.replace("There was a sense that you still feel", "You still feel")
     t = t.replace("There was a sense still feel", "You still feel")
+    t = t.replace(" sense its ", " sense it’s ")
+    t = t.replace(" sense it's ", " sense it’s ")
+    t = t.replace("There was a sense it’s better to", "It seems it’s better to")
 
     # Naturalize adjective-state mirrors
     t = re.sub(

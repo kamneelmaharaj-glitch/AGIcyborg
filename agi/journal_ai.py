@@ -26,21 +26,31 @@ def summarize_previous_output(text):
     """
     Returns the first full sentence of the previous output,
     trimmed cleanly and gracefully.
-    """
-    text = text.strip()
 
-    # if there's a period, use the first sentence
-    if "." in text:
-        first_sentence = text.split(".")[0].strip()
-        return first_sentence + "."
+    Decimal-safe:
+    - Does not split numbers like 5.5 or 24.5
+    """
+    text = (text or "").strip()
+
+    if not text:
+        return ""
+
+    # Split only on punctuation that ends a sentence:
+    # punctuation followed by whitespace + uppercase/quote/start of next sentence.
+    # Protects decimals like 5.5 KG.
+    match = re.search(r"(?<!\d)([.!?])\s+(?=[A-Z\"'])", text)
+
+    if match:
+        end = match.end(1)
+        return text[:end].strip()
+
+    # If text already ends like a complete sentence and is not too long, keep it.
+    if len(text) <= 160:
+        return text
 
     # fallback: truncate at 160 chars but on a word boundary
-    if len(text) > 160:
-        cut = text[:160]
-        cut = cut.rsplit(" ", 1)[0]
-        return cut + "..."
-
-    return text
+    cut = text[:160].rsplit(" ", 1)[0].strip()
+    return cut + "..."
 
 def update_session_context(pillar_scores, output_text, emotional_tone):
     """Update in-memory session context after each reflection."""
@@ -630,6 +640,10 @@ SECONDARY_OVERLAY: Dict[str, str] = {
     ),
 }
 
+def _stable_pick(items: list[str], seed: str) -> str:
+    if not items:
+        return ""
+    return items[sum(ord(c) for c in (seed or "")) % len(items)]
 
 def _build_mentor_note(
     pillar: str,
@@ -678,15 +692,53 @@ def _build_mentor_note(
 
     # --- Primary pillar base voice ------------------------------------------------
     if p == "presence":
-        base = (
-            "Return to the pace of your breath. What you wrote points to a moment that "
-            "wants to be met slowly, without rushing your mind ahead of your body. "
+        seed = (text or "") + "|" + presence_state + "|" + energy_state
+
+        base = _stable_pick(
+            [
+                (
+                    "Return to the pace of your breath. What you wrote points to a moment that "
+                    "wants to be met slowly, without rushing your mind ahead of your body. "
+                ),
+                (
+                    "Let your attention arrive before the next conclusion. What you wrote carries "
+                    "a quiet request to slow down enough to feel what is actually here. "
+                ),
+                (
+                    "There is something in this reflection asking for steadiness rather than speed. "
+                    "Let the body arrive with the mind before anything else is added. "
+                ),
+            ],
+            seed,
         )
+
         if presence_state == "low":
-            base += "Presence is what remains when the tension falls away, not another thing to perform. "
+            base += _stable_pick(
+                [
+                    "Presence is what remains when the tension falls away, not another thing to perform. ",
+                    "You do not have to create presence; you only have to stop moving past it. ",
+                    "Let presence be a return, not an achievement. ",
+                ],
+                seed + "|low",
+            )
         else:
-            base += "Let today be about softening one small place inside you. "
-        closing = "Return to one clean breath."
+            base += _stable_pick(
+                [
+                    "Let today be about softening one small place inside you. ",
+                    "Let one small place in you loosen without needing to explain itself. ",
+                    "Let the next moment be met with slightly less force. ",
+                ],
+                seed + "|neutral",
+            )
+
+        closing = _stable_pick(
+            [
+                "Return to one clean breath.",
+                "Let one breath be enough.",
+                "Come back to the next breath slowly.",
+            ],
+            seed + "|closing",
+        )
 
     elif p == "clarity":
         base = (

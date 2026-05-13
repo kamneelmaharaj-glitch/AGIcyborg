@@ -20,7 +20,7 @@ def _extract_core(reflection: str) -> str:
     if not reflection:
         return ""
 
-    parts = re.split(r"[.!?]", reflection)
+    parts = re.split(r"(?<!\d)[.!?](?!\d)", reflection, maxsplit=1)
     core = parts[0].strip()
 
     core = re.sub(
